@@ -1,29 +1,29 @@
 import logging
 import os
-from telegram import Update, Message
-from telegram.ext import Application, CommandHandler, MessageHandler, filters, CallbackContext
-from pymongo import MongoClient
-from pymongo.collection import Collection
+from motor.motor_asyncio import AsyncIOMotorClient
 from dotenv import load_dotenv
+from telegram import Update, Chat
+from telegram.ext import Application, CommandHandler, MessageHandler, filters, CallbackContext
 
 # Load environment variables from .env file
 load_dotenv()
 
-# Debugging statements
-print(f"MONGO_URI: {os.getenv('MONGO_URI')}")
-print(f"BOT_TOKEN: {os.getenv('BOT_TOKEN')}")
-
 # Enable logging
 logging.basicConfig(
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    level=logging.INFO
 )
 logger = logging.getLogger(__name__)
 
 # MongoDB setup
 MONGO_URI = os.getenv("MONGO_URI")
-client = MongoClient(MONGO_URI)
+if not MONGO_URI:
+    logger.error("MONGO_URI is not set in the environment variables.")
+    raise ValueError("MONGO_URI is not set in the environment variables.")
+
+client = AsyncIOMotorClient(MONGO_URI)
 db = client.telegram_bot
-collection: Collection = db.collected_data
+collection = db.collected_data
 
 # Define the start command
 async def start(update: Update, _: CallbackContext) -> None:
@@ -50,7 +50,7 @@ async def collect_data(update: Update, _: CallbackContext) -> None:
         message_link = f"https://t.me/{chat_name}/{update.message.message_id}"
 
     # Collect user link
-    user_link = f"[{user.first_name}](https://t.me/{user.username})"
+    user_link = f"[{user.first_name}](https://t.me/{user.username})" if user.username else f"{user.first_name}"
 
     # Collect data into a dictionary
     collected_data = {
@@ -59,26 +59,56 @@ async def collect_data(update: Update, _: CallbackContext) -> None:
         'message_link': message_link,
         'chat_name': chat_name,
         'message_id': update.message.message_id,  # Store the message ID
-        'chat_id': chat_name # Store the chat ID
+        'chat_id': update.message.chat.id  # Store the chat ID
     }
 
-    # Save data to MongoDB
-    collection.insert_one(collected_data)
-
-    # Reply with a confirmation message
+    try:
+        # Save data to MongoDB
+        await collection.insert_one(collected_data)
+        logger.info("Data inserted successfully.")
+    except Exception as e:
+        logger.error(f"Error saving data to MongoDB: {e}")
 
 # Function to retrieve and display all collected data
 async def show_collected_data(update: Update, _: CallbackContext) -> None:
-    data_cursor = collection.find()
-    
-    if data_cursor.count_documents({}) == 0:
-        await update.message.reply_text("No data collected yet.")
+    if update.message.chat.type != Chat.PRIVATE:
+        await update.message.reply_text("The /showdata command can only be used in a private chat with the bot.")
         return
 
-    summary = "Collected Data:\n"
-    for idx, data in enumerate(data_cursor, start=1):
-        summary += f"\n{idx}. Message from {data['user_link']} in {data['chat_name']}:\nText: {data['text']}\nMessage Link: {data['message_link']}\nMessage ID: {data['message_id']}\nChat ID: {data['chat_id']}"
-       
+    try:
+        # Retrieve data
+        data_cursor = collection.find()
+        num_docs = await collection.count_documents({})
+
+        logger.info(f"Number of documents found: {num_docs}")
+
+        if num_docs == 0:
+            await update.message.reply_text("No data collected yet.")
+            return
+
+        summary = "\n"
+        async for data in data_cursor:
+            logger.info(f"Data record: {data}")
+            summary += (f"\nMessage from {data.get('user_link', 'Unknown')} in {data.get('chat_name', 'Unknown')}:\n"
+                        f"Text: {data.get('text', 'No text')}\n"
+                        f"Message Link: {data.get('message_link', 'No link')}\n"
+                        f"Message ID: {data.get('message_id', 'No ID')}\n"
+                        f"Chat ID: {data.get('chat_id', 'No chat ID')}\n")
+
+        # Log the summary for debugging
+        logger.info(f"Summary to be sent: {summary}")
+
+        # Send the message in chunks if it exceeds Telegram's limit
+        max_message_length = 4096
+        while len(summary) > max_message_length:
+            await update.message.reply_text(summary[:max_message_length])
+            summary = summary[max_message_length:]
+
+        if summary:
+            await update.message.reply_text(summary)
+    except Exception as e:
+        logger.error(f"Error in show_collected_data: {e}", exc_info=True)
+        await update.message.reply_text("An error occurred while retrieving data.")
 
 # Error handler
 async def error(update: Update, context: CallbackContext) -> None:
@@ -87,16 +117,15 @@ async def error(update: Update, context: CallbackContext) -> None:
 def main() -> None:
     # Load Telegram bot token from environment variable
     bot_token = os.getenv("BOT_TOKEN")
-
-    # Check if bot_token is loaded
     if not bot_token:
-        raise ValueError("Bot token is not set in the environment variables")
+        logger.error("BOT_TOKEN is not set in the environment variables.")
+        raise ValueError("BOT_TOKEN is not set in the environment variables.")
 
     # Create the application and add handlers
     application = Application.builder().token(bot_token).build()
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("showdata", show_collected_data))  # Command to show collected data
-    application.add_handler(MessageHandler(filters.ALL, collect_data))  # Changed filter to ALL to capture any message with text or media
+    application.add_handler(MessageHandler(filters.ALL, collect_data))  # Capture any message with text or media
     
     # Log all errors
     application.add_error_handler(error)
