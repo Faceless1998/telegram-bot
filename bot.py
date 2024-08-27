@@ -30,6 +30,7 @@ async def start(update: Update, _: CallbackContext) -> None:
     await update.message.reply_text("Hello! I'm a bot that collects text from groups.")
 
 # Function to collect data from the group
+# Function to collect data from the group
 async def collect_data(update: Update, _: CallbackContext) -> None:
     user = update.message.from_user  # Get the user who sent the message
     chat = update.message.chat  # Get the chat where the message was sent
@@ -40,6 +41,20 @@ async def collect_data(update: Update, _: CallbackContext) -> None:
 
     # If both text and caption are None, return early
     if not text:
+        return
+
+    # Convert text to lowercase for keyword matching
+    text_lower = text.lower()
+
+    # List of keywords to check for
+    keywords = [
+    "for rent", "rental", "rent", "available for rent", "leasing", "rental property", "for lease", "rental unit",
+    "ქირავდება", "გასაცემი", "გასაქირავებელი", "დაქირავება", "ქირა", "ხელმისაწვდომი",
+    "аренда", "сдается", "в аренду", "арендуется", "квартиры в аренду", "сдам", "арендовать", "на аренду"
+    ]
+
+    # Check if text contains any of the keywords
+    if not any(keyword in text_lower for keyword in keywords):
         return
 
     # Collect the message link
