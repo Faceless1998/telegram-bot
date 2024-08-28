@@ -40,21 +40,21 @@ async def start(update: Update, _: CallbackContext) -> None:
             # Format the current date as 'YYYY-MM-DD'
             current_date = datetime.utcnow().strftime('%Y-%m-%d')
             
-            # Insert user with status 'active' and formatted date
+            # Insert user with status 'inactive' and formatted date
             await user_collection.insert_one({
                 "user_id": user_id,
-                "status": "active",
+                "status": "inactive",
                 "date": current_date
             })
-            logger.info(f"Added user {user_id} to the database with status 'active'.")
+            logger.info(f"Added user {user_id} to the database with status 'inactive'.")
         else:
             # Update the status and date if the user already exists
             current_date = datetime.utcnow().strftime('%Y-%m-%d')
             await user_collection.update_one(
                 {"user_id": user_id},
-                {"$set": {"status": "active", "date": current_date}}
+                {"$set": {"status": "inactive", "date": current_date}}
             )
-            logger.info(f"Updated user {user_id} with status 'active'.")
+            logger.info(f"Updated user {user_id} with status 'inactive'.")
 
     await update.message.reply_text("Hello! I'm a bot that collects text from groups.")
 
@@ -140,34 +140,6 @@ async def notify_users(context: CallbackContext, data: dict) -> None:
 
     # Retrieve all user IDs from the database
     async for user in user_collection.find({"status": "active"}):  # Check if the user status is 'active'
-        user_id = user["user_id"]
-        # Check if this user has already been notified about this message
-        if await notification_collection.find_one({"user_id": user_id, "message_id": data['message_id']}):
-            continue
-        
-        try:
-            await context.bot.send_message(chat_id=user_id, text=summary, reply_markup=reply_markup)
-            logger.info(f"Notification sent to user {user_id}.")
-            
-            # Record the notification
-            await notification_collection.insert_one({"user_id": user_id, "message_id": data['message_id']})
-        except Exception as e:
-            logger.error(f"Error sending notification to user {user_id}: {e}")
-
-# Function to notify users about new data
-async def notify_users(context: CallbackContext, data: dict) -> None:
-    summary = f"Text: {data.get('text', 'No text')}"
-
-    # Create InlineKeyboard for user link and message link
-    buttons = []
-    if data.get('user_link'):
-        buttons.append(InlineKeyboardButton(text="User Link", url=data['user_link']))
-    if data.get('message_link'):
-        buttons.append(InlineKeyboardButton(text="Message Link", url=data['message_link']))
-    reply_markup = InlineKeyboardMarkup([[*buttons]])
-
-    # Retrieve all user IDs from the database
-    async for user in user_collection.find():
         user_id = user["user_id"]
         # Check if this user has already been notified about this message
         if await notification_collection.find_one({"user_id": user_id, "message_id": data['message_id']}):
