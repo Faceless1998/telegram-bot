@@ -34,16 +34,27 @@ async def start(update: Update, _: CallbackContext) -> None:
     chat_type = update.message.chat.type
 
     if chat_type == Chat.PRIVATE:
-        # Add user ID to the database if not already present
+        # Check if the user is already in the database
         user = await user_collection.find_one({"user_id": user_id})
         if user is None:
-            # Insert user with status 'inactive' and current date
+            # Format the current date as 'YYYY-MM-DD'
+            current_date = datetime.utcnow().strftime('%Y-%m-%d')
+            
+            # Insert user with status 'inactive' and formatted date
             await user_collection.insert_one({
                 "user_id": user_id,
                 "status": "inactive",
-                "date": '{datetime.year()}-{datetime.month()}-{datetime.date()}'
+                "date": current_date
             })
             logger.info(f"Added user {user_id} to the database with status 'inactive'.")
+        else:
+            # Update the status and date if the user already exists
+            current_date = datetime.utcnow().strftime('%Y-%m-%d')
+            await user_collection.update_one(
+                {"user_id": user_id},
+                {"$set": {"status": "inactive", "date": current_date}}
+            )
+            logger.info(f"Updated user {user_id} with status 'inactive'.")
 
     await update.message.reply_text("Hello! I'm a bot that collects text from groups.")
 
