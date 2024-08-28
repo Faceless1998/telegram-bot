@@ -41,6 +41,7 @@ async def start(update: Update, _: CallbackContext) -> None:
 
 # Function to collect data from the group
 # Function to collect data from the group
+# Function to collect data from the group
 async def collect_data(update: Update, context: CallbackContext) -> None:
     user = update.message.from_user  # Get the user who sent the message
     chat = update.message.chat  # Get the chat where the message was sent
@@ -95,13 +96,16 @@ async def collect_data(update: Update, context: CallbackContext) -> None:
         # Notify all users about the new data
         await notify_users(context, collected_data)
 
-        # Send confirmation to the original chat
+        # Send confirmation to the user's private chat
         confirmation_message = (f"Message collected from {user_link} in {chat_name}:\n"
                                 f"Text: {text}\n"
                                 f"Message Link: {message_link}")
-        await update.message.reply_text(confirmation_message)
+
+        # Send the confirmation message to the user's private chat
+        await context.bot.send_message(chat_id=user.id, text=confirmation_message)
     except Exception as e:
         logger.error(f"Error saving data to MongoDB: {e}")
+
 
 # Function to notify users about new data
 async def notify_users(context: CallbackContext, data: dict) -> None:
