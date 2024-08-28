@@ -24,7 +24,7 @@ if not MONGO_URI:
 client = AsyncIOMotorClient(MONGO_URI)
 db = client.telegram_bot
 collection = db.collected_data
-user_collection = db.users  # New collection to store private chat user IDs
+user_collection = db.users  # Collection to store private chat user IDs
 
 # Define the start command
 async def start(update: Update, _: CallbackContext) -> None:
@@ -39,8 +39,6 @@ async def start(update: Update, _: CallbackContext) -> None:
     
     await update.message.reply_text("Hello! I'm a bot that collects text from groups.")
 
-# Function to collect data from the group
-# Function to collect data from the group
 # Function to collect data from the group
 async def collect_data(update: Update, context: CallbackContext) -> None:
     user = update.message.from_user  # Get the user who sent the message
@@ -103,10 +101,9 @@ async def collect_data(update: Update, context: CallbackContext) -> None:
                                 f"Message Link: {message_link}")
 
         # Send the confirmation message to the user's private chat
-        await context.bot.send_message(chat_id=user.id, text=confirmation_message)
+        await context.bot.send_message(chat_id=user.id, text=confirmation_message, parse_mode='Markdown')
     except Exception as e:
         logger.error(f"Error saving data to MongoDB: {e}")
-
 
 # Function to notify users about new data
 async def notify_users(context: CallbackContext, data: dict) -> None:
@@ -119,7 +116,7 @@ async def notify_users(context: CallbackContext, data: dict) -> None:
     # Retrieve all user IDs from the database
     async for user in user_collection.find():
         try:
-            # await context.bot.send_message(chat_id=user["user_id"], text=summary)
+            await context.bot.send_message(chat_id=user["user_id"], text=summary, parse_mode='Markdown')
             logger.info(f"Notification sent to user {user['user_id']}.")
         except Exception as e:
             logger.error(f"Error sending notification to user {user['user_id']}: {e}")
