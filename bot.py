@@ -25,6 +25,7 @@ client = AsyncIOMotorClient(MONGO_URI)
 db = client.telegram_bot
 collection = db.collected_data
 user_collection = db.users  # Collection to store private chat user IDs
+notification_collection = db.notifications  # Collection to track notifications
 
 # Define the start command
 async def start(update: Update, _: CallbackContext) -> None:
@@ -81,7 +82,8 @@ async def collect_data(update: Update, context: CallbackContext) -> None:
         'user_link': user_link,
         'text': text,
         'message_link': message_link,
-        'chat_name': chat_name
+        'chat_name': chat_name,
+        'message_id': update.message.message_id  # Store the message ID
     }
 
     try:
@@ -120,50 +122,19 @@ async def notify_users(context: CallbackContext, data: dict) -> None:
 
     # Retrieve all user IDs from the database
     async for user in user_collection.find():
+        user_id = user["user_id"]
+        # Check if this user has already been notified about this message
+        if await notification_collection.find_one({"user_id": user_id, "message_id": data['message_id']}):
+            continue
+        
         try:
-            await context.bot.send_message(chat_id=user["user_id"], text=summary, reply_markup=reply_markup)
-            logger.info(f"Notification sent to user {user['user_id']}.")
+            await context.bot.send_message(chat_id=user_id, text=summary, reply_markup=reply_markup)
+            logger.info(f"Notification sent to user {user_id}.")
+            
+            # Record the notification
+            await notification_collection.insert_one({"user_id": user_id, "message_id": data['message_id']})
         except Exception as e:
-            logger.error(f"Error sending notification to user {user['user_id']}: {e}")
-
-# Function to retrieve and display all collected data
-async def show_collected_data(update: Update, _: CallbackContext) -> None:
-    if update.message.chat.type != Chat.PRIVATE:
-        await update.message.reply_text("The /showdata command can only be used in a private chat with the bot.")
-        return
-
-    try:
-        # Retrieve data
-        data_cursor = collection.find()
-        num_docs = await collection.count_documents({})
-
-        logger.info(f"Number of documents found: {num_docs}")
-
-        if num_docs == 0:
-            await update.message.reply_text("No data collected yet.")
-            return
-
-        summary = "\n"
-        async for data in data_cursor:
-            logger.info(f"{data}")
-            summary += (f"Text: {data.get('text', 'No text')}\n"
-                        f"Message Link: {data.get('message_link', 'No link')}\n"
-                        f"Chat Name: {data.get('chat_name', 'Unknown')}")
-
-        # Log the summary for debugging
-        logger.info(f"Summary to be sent: {summary}")
-
-        # Send the message in chunks if it exceeds Telegram's limit
-        max_message_length = 4096
-        while len(summary) > max_message_length:
-            await update.message.reply_text(summary[:max_message_length])
-            summary = summary[max_message_length:]
-
-        if summary:
-            await update.message.reply_text(summary)
-    except Exception as e:
-        logger.error(f"Error in show_collected_data: {e}", exc_info=True)
-        await update.message.reply_text("An error occurred while retrieving data.")
+            logger.error(f"Error sending notification to user {user_id}: {e}")
 
 # Error handler
 async def error(update: Update, context: CallbackContext) -> None:
@@ -179,12 +150,10 @@ def main() -> None:
     # Create the application and add handlers
     application = Application.builder().token(bot_token).build()
     application.add_handler(CommandHandler("start", start))
-    application.add_handler(CommandHandler("showdata", show_collected_data))  # Command to show collected data
     application.add_handler(MessageHandler(filters.ALL, collect_data))  # Capture any message with text or media
     
     commands = [
-        BotCommand("start", "Start the bot"),
-        BotCommand("showdata", "Show collected data")
+        BotCommand("start", "Start the bot")
     ]
     application.bot.set_my_commands(commands)
     
