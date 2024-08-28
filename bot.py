@@ -138,35 +138,47 @@ async def show_collected_data(update: Update, _: CallbackContext) -> None:
 
 # Define the subscribe command
 async def subscribe(update: Update, _: CallbackContext) -> None:
-    chat_id = update.message.chat.id
+    try:
+        chat_id = update.message.chat.id
+        title = "Monthly Subscription"
+        description = "Subscribe for one month"
+        payload = "monthly_subscription_payload"
+        provider_token = TRANZZO_PROVIDER_TOKEN
+        currency = "USD"
+        prices = [LabeledPrice("1 Month Subscription", 100)]  # Price in cents (e.g., 100 cents = 1 USD)
 
-    title = "Monthly Subscription"
-    description = "Subscribe for one month"
-    payload = "monthly_subscription_payload"
-    provider_token = TRANZZO_PROVIDER_TOKEN
-    currency = "USD"
-    prices = [LabeledPrice("1 Month Subscription", 100)]  # Price in cents (e.g., 1 USD)
+        await update.message.reply_invoice(
+            title=title,
+            description=description,
+            payload=payload,
+            provider_token=provider_token,
+            currency=currency,
+            prices=prices
+        )
+        logger.info(f"Invoice sent to chat {chat_id}.")
+    
+    except Exception as e:
+        logger.error(f"Error sending invoice: {e}")
+        await update.message.reply_text("There was an error processing your subscription. Please try again later.")
 
-    await update.message.reply_invoice(
-        title=title,
-        description=description,
-        payload=payload,
-        provider_token=provider_token,
-        currency=currency,
-        prices=prices
-    )
 
 # Handle successful payment
-async def successful_payment(update: Update, _: CallbackContext) -> None:
-    payment_info = update.message.successful_payment
-    user_id = update.message.from_user.id
+async def successful_payment(update: Update, context: CallbackContext) -> None:
+    try:
+        payment_info = update.message.successful_payment
+        user_id = update.message.from_user.id
 
-    await user_collection.update_one(
-        {"user_id": user_id},
-        {"$set": {"subscription_status": "active", "subscription_end": "2024-09-30"}}  # Update end date appropriately
-    )
-    
-    await update.message.reply_text("Thank you for your payment! Your subscription is now active.")
+        # Update user subscription status in MongoDB
+        await user_collection.update_one(
+            {"user_id": user_id},
+            {"$set": {"subscription_status": "active", "subscription_end": "2024-09-30"}}  # Update end date appropriately
+        )
+        await update.message.reply_text("Thank you for your payment! Your subscription is now active.")
+        logger.info(f"Payment successful for user {user_id}. Payment info: {payment_info}")
+
+    except Exception as e:
+        logger.error(f"Error processing payment: {e}")
+        await update.message.reply_text("There was an error processing your payment. Please try again.")
 
 # Error handler
 async def error(update: Update, context: CallbackContext) -> None:
