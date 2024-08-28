@@ -121,9 +121,9 @@ async def notify_users(context: CallbackContext, data: dict) -> None:
     # Create InlineKeyboard for user link and message link
     buttons = []
     if data.get('user_link'):
-        buttons.append(InlineKeyboardButton(text='{user_link}', url=data['user_link']))
+        buttons.append(InlineKeyboardButton(text="f({data['user_link']})", url=data['user_link']))
     if data.get('message_link'):
-        buttons.append(InlineKeyboardButton(text='{message_link}', url=data['message_link']))
+        buttons.append(InlineKeyboardButton(text="f({data['message_link']})", url=data['message_link']))
     reply_markup = InlineKeyboardMarkup([[*buttons]])
 
     # Retrieve all user IDs from the database
