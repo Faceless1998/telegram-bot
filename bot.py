@@ -1,5 +1,6 @@
 import logging
 import os
+from datetime import datetime
 from motor.motor_asyncio import AsyncIOMotorClient
 from dotenv import load_dotenv
 from telegram import Update, Chat, BotCommand, InlineKeyboardButton, InlineKeyboardMarkup
@@ -34,10 +35,16 @@ async def start(update: Update, _: CallbackContext) -> None:
 
     if chat_type == Chat.PRIVATE:
         # Add user ID to the database if not already present
-        if await user_collection.find_one({"user_id": user_id}) is None:
-            await user_collection.insert_one({"user_id": user_id})
-            logger.info(f"Added user {user_id} to the database.")
-    
+        user = await user_collection.find_one({"user_id": user_id})
+        if user is None:
+            # Insert user with status 'inactive' and current date
+            await user_collection.insert_one({
+                "user_id": user_id,
+                "status": "inactive",
+                "date": datetime.utcnow()
+            })
+            logger.info(f"Added user {user_id} to the database with status 'inactive'.")
+
     await update.message.reply_text("Hello! I'm a bot that collects text from groups.")
 
 # Function to collect data from the group
