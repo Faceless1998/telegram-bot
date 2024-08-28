@@ -29,6 +29,7 @@ user_collection = db.users  # Collection to store private chat user IDs
 notification_collection = db.notifications  # Collection to track notifications
 
 # Define the start command
+# Define the start command
 async def start(update: Update, _: CallbackContext) -> None:
     user_id = update.message.from_user.id
     chat_type = update.message.chat.type
@@ -47,6 +48,7 @@ async def start(update: Update, _: CallbackContext) -> None:
                 "date": current_date
             })
             logger.info(f"Added user {user_id} to the database with status 'inactive'.")
+            await update.message.reply_text("Hello! I'm a bot that collects text from groups.")
         else:
             # Update the status and date if the user already exists
             current_date = datetime.utcnow().strftime('%Y-%m-%d')
@@ -55,8 +57,8 @@ async def start(update: Update, _: CallbackContext) -> None:
                 {"$set": {"status": "inactive", "date": current_date}}
             )
             logger.info(f"Updated user {user_id} with status 'inactive'.")
+            await update.message.reply_text("You have already started. I'm here to collect text from groups.")
 
-    await update.message.reply_text("Hello! I'm a bot that collects text from groups.")
 
 # Function to collect data from the group
 async def collect_data(update: Update, context: CallbackContext) -> None:
@@ -121,9 +123,9 @@ async def notify_users(context: CallbackContext, data: dict) -> None:
     # Create InlineKeyboard for user link and message link
     buttons = []
     if data.get('user_link'):
-        buttons.append(InlineKeyboardButton(text="f({data['user_link']})", url=data['user_link']))
+        buttons.append(InlineKeyboardButton(text="User Link", url=data['user_link']))
     if data.get('message_link'):
-        buttons.append(InlineKeyboardButton(text="f({data['message_link']})", url=data['message_link']))
+        buttons.append(InlineKeyboardButton(text="Message Link", url=data['message_link']))
     reply_markup = InlineKeyboardMarkup([[*buttons]])
 
     # Retrieve all user IDs from the database
