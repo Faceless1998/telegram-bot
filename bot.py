@@ -119,7 +119,7 @@ async def notify_users(context: CallbackContext, data: dict) -> None:
     # Retrieve all user IDs from the database
     async for user in user_collection.find():
         try:
-            await context.bot.send_message(chat_id=user["user_id"], text=summary)
+            # await context.bot.send_message(chat_id=user["user_id"], text=summary)
             logger.info(f"Notification sent to user {user['user_id']}.")
         except Exception as e:
             logger.error(f"Error sending notification to user {user['user_id']}: {e}")
