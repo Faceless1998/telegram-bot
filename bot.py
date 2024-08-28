@@ -27,39 +27,7 @@ db = client.telegram_bot
 collection = db.collected_data
 user_collection = db.users  # Collection to store private chat user IDs
 notification_collection = db.notifications  # Collection to track notifications
-# Define the start command
-async def start(update: Update, _: CallbackContext) -> None:
-    user_id = update.message.from_user.id
-    chat_type = update.message.chat.type
-    user = update.message.from_user
-    
-    # Collect user information
-    username = user.username
-    first_name = user.first_name
-    last_name = user.last_name
 
-    if chat_type == Chat.PRIVATE:
-        # Check if the user is already in the database
-        user = await user_collection.find_one({"user_id": user_id})
-        if user is None:
-            # Format the current date as 'YYYY-MM-DD'
-            current_date = datetime.utcnow().strftime('%Y-%m-%d')
-            
-            # Insert user with status 'inactive' and formatted date
-            await user_collection.insert_one({
-                "first_name": first_name,
-                "last_name": last_name,
-                "username": username,
-                "user_id": user_id,
-                "status": "inactive",
-                "date": current_date
-            })
-            logger.info(f"Added user {user_id} to the database with status 'inactive'.")
-            await update.message.reply_text("Hello! I'm a bot that collects text from groups.")
-        else:
-            # User already exists; no need to update status
-            logger.info(f"User {user_id} already registered.")
-            await update.message.reply_text("You have already started. I'm here to collect text from groups.")
 
 # Define the start command
 async def start(update: Update, _: CallbackContext) -> None:
