@@ -111,31 +111,19 @@ async def collect_data(update: Update, context: CallbackContext) -> None:
 
         # Notify all users about the new data
         await notify_users(context, collected_data)
-
-        # Create InlineKeyboard for user link and message link
-        buttons = []
-        if user_link:
-            buttons.append(InlineKeyboardButton(text="User Link", url=user_link))
-        buttons.append(InlineKeyboardButton(text="Message Link", url=message_link))
-        reply_markup = InlineKeyboardMarkup([[*buttons]])
-
-        # Send the confirmation message to the user's private chat
-        confirmation_message = f"Text: {text}"
-
-        await context.bot.send_message(chat_id=user.id, text=confirmation_message, reply_markup=reply_markup)
     except Exception as e:
         logger.error(f"Error saving data to MongoDB: {e}")
 
 # Function to notify users about new data
 async def notify_users(context: CallbackContext, data: dict) -> None:
-    summary = f"Text: {data.get('text', 'No text')}"
+    summary = f"{data.get('text', 'No text')}"
 
     # Create InlineKeyboard for user link and message link
     buttons = []
     if data.get('user_link'):
-        buttons.append(InlineKeyboardButton(text="User Link", url=data['user_link']))
+        buttons.append(InlineKeyboardButton(text='{user_link}', url=data['user_link']))
     if data.get('message_link'):
-        buttons.append(InlineKeyboardButton(text="Message Link", url=data['message_link']))
+        buttons.append(InlineKeyboardButton(text='{message_link}', url=data['message_link']))
     reply_markup = InlineKeyboardMarkup([[*buttons]])
 
     # Retrieve all user IDs from the database
