@@ -24,14 +24,23 @@ if not MONGO_URI:
 client = AsyncIOMotorClient(MONGO_URI)
 db = client.telegram_bot
 collection = db.collected_data
+user_collection = db.users  # New collection to store private chat user IDs
 
 # Define the start command
 async def start(update: Update, _: CallbackContext) -> None:
+    user_id = update.message.from_user.id
+    chat_type = update.message.chat.type
+
+    if chat_type == Chat.PRIVATE:
+        # Add user ID to the database if not already present
+        if await user_collection.find_one({"user_id": user_id}) is None:
+            await user_collection.insert_one({"user_id": user_id})
+            logger.info(f"Added user {user_id} to the database.")
+    
     await update.message.reply_text("Hello! I'm a bot that collects text from groups.")
 
 # Function to collect data from the group
-# Function to collect data from the group
-async def collect_data(update: Update, _: CallbackContext) -> None:
+async def collect_data(update: Update, context: CallbackContext) -> None:
     user = update.message.from_user  # Get the user who sent the message
     chat = update.message.chat  # Get the chat where the message was sent
     chat_name = chat.title if chat.title else chat.username or "Private Chat"
@@ -48,9 +57,9 @@ async def collect_data(update: Update, _: CallbackContext) -> None:
 
     # List of keywords to check for
     keywords = [
-    "for rent", "rental", "rent", "available for rent", "leasing", "rental property", "for lease", "rental unit",
-    "ქირავდება", "გასაცემი", "გასაქირავებელი", "დაქირავება", "ქირა", "ხელმისაწვდომი",
-    "аренда", "сдается", "в аренду", "арендуется", "квартиры в аренду", "сдам", "арендовать", "на аренду"
+        "for rent", "rental", "rent", "available for rent", "leasing", "rental property", "for lease", "rental unit",
+        "ქირავდება", "გასაცემი", "გასაქირავებელი", "დაქირავება", "ქირა", "ხელმისაწვდომი",
+        "аренда", "сдается", "в аренду", "арендуется", "квартиры в аренду", "сдам", "арендовать", "на аренду"
     ]
 
     # Check if text contains any of the keywords
@@ -81,8 +90,27 @@ async def collect_data(update: Update, _: CallbackContext) -> None:
         # Save data to MongoDB
         await collection.insert_one(collected_data)
         logger.info("Data inserted successfully.")
+
+        # Notify all users about the new data
+        await notify_users(context, collected_data)
     except Exception as e:
         logger.error(f"Error saving data to MongoDB: {e}")
+
+# Function to notify users about new data
+async def notify_users(context: CallbackContext, data: dict) -> None:
+    summary = (f"New message from {data.get('user_link', 'Unknown')} in {data.get('chat_name', 'Unknown')}:\n"
+               f"Text: {data.get('text', 'No text')}\n"
+               f"Message Link: {data.get('message_link', 'No link')}\n"
+               f"Message ID: {data.get('message_id', 'No ID')}\n"
+               f"Chat ID: {data.get('chat_id', 'No chat ID')}\n")
+
+    # Retrieve all user IDs from the database
+    async for user in user_collection.find():
+        try:
+            await context.bot.send_message(chat_id=user["user_id"], text=summary)
+            logger.info(f"Notification sent to user {user['user_id']}.")
+        except Exception as e:
+            logger.error(f"Error sending notification to user {user['user_id']}: {e}")
 
 # Function to retrieve and display all collected data
 async def show_collected_data(update: Update, _: CallbackContext) -> None:
