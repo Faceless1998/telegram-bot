@@ -2,7 +2,7 @@ import logging
 import os
 from motor.motor_asyncio import AsyncIOMotorClient
 from dotenv import load_dotenv
-from telegram import Update, Chat, BotCommand
+from telegram import Update, LabeledPrice, BotCommand
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, CallbackContext
 
 # Load environment variables from .env file
@@ -26,81 +26,64 @@ db = client.telegram_bot
 collection = db.collected_data
 user_collection = db.users  # Collection to store private chat user IDs
 
+# Your Tranzzo credentials
+TRANZZO_PROVIDER_TOKEN = os.getenv("TRANZZO_PROVIDER_TOKEN")
+TELEGRAM_BOT_TOKEN = os.getenv("BOT_TOKEN")
+
 # Define the start command
 async def start(update: Update, _: CallbackContext) -> None:
     user_id = update.message.from_user.id
     chat_type = update.message.chat.type
 
     if chat_type == Chat.PRIVATE:
-        # Add user ID to the database if not already present
         if await user_collection.find_one({"user_id": user_id}) is None:
             await user_collection.insert_one({"user_id": user_id})
             logger.info(f"Added user {user_id} to the database.")
     
-    await update.message.reply_text("Hello! I'm a bot that collects text from groups.")
+    await update.message.reply_text("Hello! I'm a bot that collects text from groups and handles subscriptions.")
 
 # Function to collect data from the group
 async def collect_data(update: Update, context: CallbackContext) -> None:
-    user = update.message.from_user  # Get the user who sent the message
-    chat = update.message.chat  # Get the chat where the message was sent
+    user = update.message.from_user
+    chat = update.message.chat
     chat_name = chat.title if chat.title else chat.username or "Private Chat"
 
-    # Collect the message text or caption
     text = update.message.text if update.message.text else update.message.caption
 
-    # If both text and caption are None, return early
     if not text:
         return
 
-    # Convert text to lowercase for keyword matching
     text_lower = text.lower()
-
-    # List of keywords to check for
     keywords = [
         "for rent", "rental", "rent", "available for rent", "leasing", "rental property", "for lease", "rental unit",
         "ქირავდება", "გასაცემი", "გასაქირავებელი", "დაქირავება", "ქირა", "ხელმისაწვდომი",
         "аренда", "сдается", "в аренду", "арендуется", "квартиры в аренду", "сдам", "арендовать", "на аренду", "Сниму квартиру"
     ]
 
-    # Check if text contains any of the keywords
     if not any(keyword in text_lower for keyword in keywords):
         return
 
-    # Collect the message link
-    if chat.username:  # For channels and supergroups with a username
-        message_link = f"https://t.me/{chat.username}/{update.message.message_id}"
-    else:
-        # Fallback for groups without a username
-        message_link = f"https://t.me/{chat_name}/{update.message.message_id}"
-
-    # Collect user link
+    message_link = f"https://t.me/{chat.username}/{update.message.message_id}" if chat.username else f"https://t.me/{chat_name}/{update.message.message_id}"
     user_link = f"[{user.first_name}](https://t.me/{user.username})" if user.username else f"{user.first_name}"
 
-    # Collect data into a dictionary
     collected_data = {
         'user_link': user_link,
         'text': text,
         'message_link': message_link,
         'chat_name': chat_name,
-        'message_id': update.message.message_id,  # Store the message ID
-        'chat_id': update.message.chat.id  # Store the chat ID
+        'message_id': update.message.message_id,
+        'chat_id': update.message.chat.id
     }
 
     try:
-        # Save data to MongoDB
         await collection.insert_one(collected_data)
         logger.info("Data inserted successfully.")
-
-        # Notify all users about the new data
         await notify_users(context, collected_data)
 
-        # Send confirmation to the user's private chat
         confirmation_message = (f"user link:[{user.first_name}](https://t.me/{user.username})\n"
                                 f"nickname:{user.username}\n"
                                 f"Text: {text}\n"
                                 f"Message Link: {message_link}")
-
-        # Send the confirmation message to the user's private chat
         await context.bot.send_message(chat_id=user.id, text=confirmation_message, parse_mode='Markdown')
     except Exception as e:
         logger.error(f"Error saving data to MongoDB: {e}")
@@ -113,7 +96,6 @@ async def notify_users(context: CallbackContext, data: dict) -> None:
                f"Message ID: {data.get('message_id', 'No ID')}\n"
                f"Chat ID: {data.get('chat_id', 'No chat ID')}\n")
 
-    # Retrieve all user IDs from the database
     async for user in user_collection.find():
         try:
             await context.bot.send_message(chat_id=user["user_id"], text=summary, parse_mode='Markdown')
@@ -121,18 +103,15 @@ async def notify_users(context: CallbackContext, data: dict) -> None:
         except Exception as e:
             logger.error(f"Error sending notification to user {user['user_id']}: {e}")
 
-# Function to retrieve and display all collected data
+# Function to show collected data
 async def show_collected_data(update: Update, _: CallbackContext) -> None:
     if update.message.chat.type != Chat.PRIVATE:
         await update.message.reply_text("The /showdata command can only be used in a private chat with the bot.")
         return
 
     try:
-        # Retrieve data
         data_cursor = collection.find()
         num_docs = await collection.count_documents({})
-
-        logger.info(f"Number of documents found: {num_docs}")
 
         if num_docs == 0:
             await update.message.reply_text("No data collected yet.")
@@ -140,17 +119,12 @@ async def show_collected_data(update: Update, _: CallbackContext) -> None:
 
         summary = "\n"
         async for data in data_cursor:
-            logger.info(f"Data record: {data}")
             summary += (f"\nMessage from {data.get('user_link', 'Unknown')} in {data.get('chat_name', 'Unknown')}:\n"
                         f"Text: {data.get('text', 'No text')}\n"
                         f"Message Link: {data.get('message_link', 'No link')}\n"
                         f"Message ID: {data.get('message_id', 'No ID')}\n"
                         f"Chat ID: {data.get('chat_id', 'No chat ID')}\n")
 
-        # Log the summary for debugging
-        logger.info(f"Summary to be sent: {summary}")
-
-        # Send the message in chunks if it exceeds Telegram's limit
         max_message_length = 4096
         while len(summary) > max_message_length:
             await update.message.reply_text(summary[:max_message_length])
@@ -162,33 +136,63 @@ async def show_collected_data(update: Update, _: CallbackContext) -> None:
         logger.error(f"Error in show_collected_data: {e}", exc_info=True)
         await update.message.reply_text("An error occurred while retrieving data.")
 
+# Define the subscribe command
+async def subscribe(update: Update, _: CallbackContext) -> None:
+    chat_id = update.message.chat.id
+
+    title = "Monthly Subscription"
+    description = "Subscribe for one month"
+    payload = "monthly_subscription_payload"
+    provider_token = TRANZZO_PROVIDER_TOKEN
+    currency = "USD"
+    prices = [LabeledPrice("1 Month Subscription", 1)]  # Price in cents (e.g., 10 USD)
+
+    await update.message.reply_invoice(
+        title=title,
+        description=description,
+        payload=payload,
+        provider_token=provider_token,
+        currency=currency,
+        prices=prices
+    )
+
+# Handle successful payment
+async def successful_payment(update: Update, _: CallbackContext) -> None:
+    payment_info = update.message.successful_payment
+    user_id = update.message.from_user.id
+
+    await user_collection.update_one(
+        {"user_id": user_id},
+        {"$set": {"subscription_status": "active", "subscription_end": "2024-09-30"}}  # Update end date appropriately
+    )
+    
+    await update.message.reply_text("Thank you for your payment! Your subscription is now active.")
+
 # Error handler
 async def error(update: Update, context: CallbackContext) -> None:
     logger.warning(f"Update {update} caused error {context.error}")
 
 def main() -> None:
-    # Load Telegram bot token from environment variable
-    bot_token = os.getenv("BOT_TOKEN")
+    bot_token = TELEGRAM_BOT_TOKEN
     if not bot_token:
         logger.error("BOT_TOKEN is not set in the environment variables.")
         raise ValueError("BOT_TOKEN is not set in the environment variables.")
 
-    # Create the application and add handlers
     application = Application.builder().token(bot_token).build()
     application.add_handler(CommandHandler("start", start))
-    application.add_handler(CommandHandler("showdata", show_collected_data))  # Command to show collected data
-    application.add_handler(MessageHandler(filters.ALL, collect_data))  # Capture any message with text or media
-    
+    application.add_handler(CommandHandler("showdata", show_collected_data))
+    application.add_handler(CommandHandler("subscribe", subscribe))
+    application.add_handler(MessageHandler(filters.SUCCESSFUL_PAYMENT, successful_payment))
+    application.add_handler(MessageHandler(filters.ALL, collect_data))
+
     commands = [
         BotCommand("start", "Start the bot"),
-        BotCommand("showdata", "Show collected data")
+        BotCommand("showdata", "Show collected data"),
+        BotCommand("subscribe", "Subscribe for a monthly plan")
     ]
     application.bot.set_my_commands(commands)
     
-    # Log all errors
     application.add_error_handler(error)
-
-    # Start the Bot
     application.run_polling()
 
 if __name__ == '__main__':
