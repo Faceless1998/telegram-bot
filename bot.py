@@ -97,8 +97,7 @@ async def collect_data(update: Update, context: CallbackContext) -> None:
         await notify_users(context, collected_data)
 
         # Send confirmation to the user's private chat
-        confirmation_message = (f"Message collected from {user_link} in {chat_name}:\n"
-                                f"Text: {text}\n"
+        confirmation_message = (f"Text: {text}\n"
                                 f"Message Link: {message_link}")
 
         # Send the confirmation message to the user's private chat
