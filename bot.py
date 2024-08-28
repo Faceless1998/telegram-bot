@@ -28,8 +28,6 @@ collection = db.collected_data
 user_collection = db.users  # Collection to store private chat user IDs
 notification_collection = db.notifications  # Collection to track notifications
 
-
-# Define the start command
 async def start(update: Update, _: CallbackContext) -> None:
 
     user_id = update.message.from_user.id
@@ -53,8 +51,8 @@ async def start(update: Update, _: CallbackContext) -> None:
             # Insert user with status 'inactive' and formatted date
             await user_collection.insert_one({
                 "username":username,
-                "first name":first_name,
-                "last name":last_name,
+                "first_name":first_name,
+                "last_name":last_name,
                 "user_id": user_id,
                 "status": "inactive",
                 "date": current_date
@@ -109,6 +107,7 @@ async def collect_data(update: Update, context: CallbackContext) -> None:
         'text': text,
         'message_link': message_link,
         'chat_name': chat_name,
+        'message_id': update.message.message_id  # Store the message ID
     }
 
     try:
@@ -128,9 +127,9 @@ async def notify_users(context: CallbackContext, data: dict) -> None:
     # Create InlineKeyboard for user link and message link
     buttons = []
     if data.get('user_link'):
-        buttons.append(InlineKeyboardButton(text=f"({data['user_link']})", url=data['user_link']))
+        buttons.append(InlineKeyboardButton(text='{user_link}', url=data['user_link']))
     if data.get('message_link'):
-        buttons.append(InlineKeyboardButton(text=f"({data['message_link']})", url=data['message_link']))
+        buttons.append(InlineKeyboardButton(text='{message_link}', url=data['message_link']))
     reply_markup = InlineKeyboardMarkup([[*buttons]])
 
     # Retrieve all user IDs from the database
