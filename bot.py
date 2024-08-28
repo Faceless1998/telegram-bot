@@ -2,7 +2,7 @@ import logging
 import os
 from motor.motor_asyncio import AsyncIOMotorClient
 from dotenv import load_dotenv
-from telegram import Update, Chat, BotCommand
+from telegram import Update, Chat, BotCommand, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, CallbackContext
 
 # Load environment variables from .env file
@@ -74,16 +74,14 @@ async def collect_data(update: Update, context: CallbackContext) -> None:
         message_link = f"https://t.me/{chat_name}/{update.message.message_id}"
 
     # Collect user link
-    user_link = f"[{user.first_name}](https://t.me/{user.username})" if user.username else f"{user.first_name}"
+    user_link = f"https://t.me/{user.username}" if user.username else None
 
     # Collect data into a dictionary
     collected_data = {
         'user_link': user_link,
         'text': text,
         'message_link': message_link,
-        'chat_name': chat_name,
-        'message_id': update.message.message_id,  # Store the message ID
-        'chat_id': update.message.chat.id  # Store the chat ID
+        'chat_name': chat_name
     }
 
     try:
@@ -94,29 +92,36 @@ async def collect_data(update: Update, context: CallbackContext) -> None:
         # Notify all users about the new data
         await notify_users(context, collected_data)
 
-        # Send confirmation to the user's private chat
-        confirmation_message = (f"user link:[{user.first_name}](https://t.me/{user.username})\n"
-                                f"nickname:{user.username}\n"
-                                f"Text: {text}\n"
-                                f"Message Link: {message_link}")
+        # Create InlineKeyboard for user link and message link
+        buttons = []
+        if user_link:
+            buttons.append(InlineKeyboardButton(text="User Link", url=user_link))
+        buttons.append(InlineKeyboardButton(text="Message Link", url=message_link))
+        reply_markup = InlineKeyboardMarkup([[*buttons]])
 
         # Send the confirmation message to the user's private chat
-        await context.bot.send_message(chat_id=user.id, text=confirmation_message, parse_mode='Markdown')
+        confirmation_message = f"Text: {text}"
+
+        await context.bot.send_message(chat_id=user.id, text=confirmation_message, reply_markup=reply_markup)
     except Exception as e:
         logger.error(f"Error saving data to MongoDB: {e}")
 
 # Function to notify users about new data
 async def notify_users(context: CallbackContext, data: dict) -> None:
-    summary = (f"{data.get('user_link', 'Unknown')} in {data.get('chat_name', 'Unknown')}:\n"
-               f"Text: {data.get('text', 'No text')}\n"
-               f"Message Link: {data.get('message_link', 'No link')}\n"
-               f"Message ID: {data.get('message_id', 'No ID')}\n"
-               f"Chat ID: {data.get('chat_id', 'No chat ID')}\n")
+    summary = f"Text: {data.get('text', 'No text')}"
+
+    # Create InlineKeyboard for user link and message link
+    buttons = []
+    if data.get('user_link'):
+        buttons.append(InlineKeyboardButton(text="User Link", url=data['user_link']))
+    if data.get('message_link'):
+        buttons.append(InlineKeyboardButton(text="Message Link", url=data['message_link']))
+    reply_markup = InlineKeyboardMarkup([[*buttons]])
 
     # Retrieve all user IDs from the database
     async for user in user_collection.find():
         try:
-            await context.bot.send_message(chat_id=user["user_id"], text=summary, parse_mode='Markdown')
+            await context.bot.send_message(chat_id=user["user_id"], text=summary, reply_markup=reply_markup)
             logger.info(f"Notification sent to user {user['user_id']}.")
         except Exception as e:
             logger.error(f"Error sending notification to user {user['user_id']}: {e}")
@@ -141,11 +146,9 @@ async def show_collected_data(update: Update, _: CallbackContext) -> None:
         summary = "\n"
         async for data in data_cursor:
             logger.info(f"{data}")
-            summary += (f"\nMessage from {data.get('user_link', 'Unknown')} in {data.get('chat_name', 'Unknown')}:\n"
-                        f"Text: {data.get('text', 'No text')}\n"
+            summary += (f"Text: {data.get('text', 'No text')}\n"
                         f"Message Link: {data.get('message_link', 'No link')}\n"
-                        f"Message ID: {data.get('message_id', 'No ID')}\n"
-                        f"Chat ID: {data.get('chat_id', 'No chat ID')}\n")
+                        f"Chat Name: {data.get('chat_name', 'Unknown')}")
 
         # Log the summary for debugging
         logger.info(f"Summary to be sent: {summary}")
