@@ -118,9 +118,37 @@ async def collect_data(update: Update, context: CallbackContext) -> None:
         logger.info("Data inserted successfully.")
 
         # Notify all users about the new data
+        await notify_users(context, collected_data)
     except Exception as e:
         logger.error(f"Error saving data to MongoDB: {e}")
 
+# Function to notify users about new data
+async def notify_users(context: CallbackContext, data: dict) -> None:
+    summary = f"{data.get('text', 'No text')}"
+
+    # Create InlineKeyboard for user link and message link
+    buttons = []
+    if data.get('user_link'):
+        buttons.append(InlineKeyboardButton(text=f"({data['user_link']})", url=data['user_link']))
+    if data.get('message_link'):
+        buttons.append(InlineKeyboardButton(text=f"({data['message_link']})", url=data['message_link']))
+    reply_markup = InlineKeyboardMarkup([[*buttons]])
+
+    # Retrieve all user IDs from the database
+    async for user in user_collection.find({"status": "active"}):  # Check if the user status is 'active'
+        user_id = user["user_id"]
+        # Check if this user has already been notified about this message
+        if await notification_collection.find_one({"user_id": user_id, "message_id": data['message_id']}):
+            continue
+        
+        try:
+            await context.bot.send_message(chat_id=user_id, text=summary, reply_markup=reply_markup)
+            logger.info(f"Notification sent to user {user_id}.")
+            
+            # Record the notification
+            await notification_collection.insert_one({"user_id": user_id, "message_id": data['message_id']})
+        except Exception as e:
+            logger.error(f"Error sending notification to user {user_id}: {e}")
 
 # Error handler
 async def error(update: Update, context: CallbackContext) -> None:
