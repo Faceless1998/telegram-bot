@@ -107,7 +107,7 @@ async def collect_data(update: Update, context: CallbackContext) -> None:
 
 # Function to notify users about new data
 async def notify_users(context: CallbackContext, data: dict) -> None:
-    summary = (f"New message from {data.get('user_link', 'Unknown')} in {data.get('chat_name', 'Unknown')}:\n"
+    summary = (f"{data.get('user_link', 'Unknown')} in {data.get('chat_name', 'Unknown')}:\n"
                f"Text: {data.get('text', 'No text')}\n"
                f"Message Link: {data.get('message_link', 'No link')}\n"
                f"Message ID: {data.get('message_id', 'No ID')}\n"
@@ -140,7 +140,7 @@ async def show_collected_data(update: Update, _: CallbackContext) -> None:
 
         summary = "\n"
         async for data in data_cursor:
-            logger.info(f"Data record: {data}")
+            logger.info(f"{data}")
             summary += (f"\nMessage from {data.get('user_link', 'Unknown')} in {data.get('chat_name', 'Unknown')}:\n"
                         f"Text: {data.get('text', 'No text')}\n"
                         f"Message Link: {data.get('message_link', 'No link')}\n"
