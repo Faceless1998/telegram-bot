@@ -2,7 +2,7 @@ import logging
 import os
 from motor.motor_asyncio import AsyncIOMotorClient
 from dotenv import load_dotenv
-from telegram import Update, Chat
+from telegram import Update, Chat, BotCommand
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, CallbackContext
 
 # Load environment variables from .env file
@@ -181,6 +181,12 @@ def main() -> None:
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("showdata", show_collected_data))  # Command to show collected data
     application.add_handler(MessageHandler(filters.ALL, collect_data))  # Capture any message with text or media
+    
+    commands = [
+        BotCommand("start", "Start the bot"),
+        BotCommand("showdata", "Show collected data")
+    ]
+    application.bot.set_my_commands(commands)
     
     # Log all errors
     application.add_error_handler(error)
