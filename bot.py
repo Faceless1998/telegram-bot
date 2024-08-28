@@ -41,7 +41,7 @@ async def start(update: Update, _: CallbackContext) -> None:
             await user_collection.insert_one({
                 "user_id": user_id,
                 "status": "inactive",
-                "date": '{datetime.date()}/{datetime.month()}/{datetime.year()}'
+                "date": '{datetime.year()}-{datetime.month()}-{datetime.date()}'
             })
             logger.info(f"Added user {user_id} to the database with status 'inactive'.")
 
