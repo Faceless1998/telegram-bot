@@ -61,7 +61,7 @@ async def collect_data(update: Update, context: CallbackContext) -> None:
     keywords = [
         "for rent", "rental", "rent", "available for rent", "leasing", "rental property", "for lease", "rental unit",
         "ქირავდება", "გასაცემი", "გასაქირავებელი", "დაქირავება", "ქირა", "ხელმისაწვდომი",
-        "аренда", "сдается", "в аренду", "арендуется", "квартиры в аренду", "сдам", "арендовать", "на аренду"
+        "аренда", "сдается", "в аренду", "арендуется", "квартиры в аренду", "сдам", "арендовать", "на аренду", "Сниму квартиру"
     ]
 
     # Check if text contains any of the keywords
