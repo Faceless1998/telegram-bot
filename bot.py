@@ -2,7 +2,7 @@ import logging
 import os
 from motor.motor_asyncio import AsyncIOMotorClient
 from dotenv import load_dotenv
-from telegram import Update, LabeledPrice, BotCommand
+from telegram import Update, LabeledPrice, BotCommand, Chat
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, CallbackContext
 
 # Load environment variables from .env file
@@ -145,7 +145,7 @@ async def subscribe(update: Update, _: CallbackContext) -> None:
     payload = "monthly_subscription_payload"
     provider_token = TRANZZO_PROVIDER_TOKEN
     currency = "USD"
-    prices = [LabeledPrice("1 Month Subscription", 1)]  # Price in cents (e.g., 10 USD)
+    prices = [LabeledPrice("1 Month Subscription", 100)]  # Price in cents (e.g., 1 USD)
 
     await update.message.reply_invoice(
         title=title,
