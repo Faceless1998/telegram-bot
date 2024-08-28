@@ -31,6 +31,7 @@ notification_collection = db.notifications  # Collection to track notifications
 
 # Define the start command
 async def start(update: Update, _: CallbackContext) -> None:
+
     user_id = update.message.from_user.id
     chat_type = update.message.chat.type
     user = update.message.from_user
@@ -39,24 +40,31 @@ async def start(update: Update, _: CallbackContext) -> None:
     username = user.username
     first_name = user.first_name
     last_name = user.last_name
+    user_id = update.message.from_user.id
+    chat_type = update.message.chat.type
 
     if chat_type == Chat.PRIVATE:
         # Check if the user is already in the database
-        existing_user = await user_collection.find_one({"user_id": user_id})
-        if existing_user is None:
+        user = await user_collection.find_one({"user_id": user_id})
+        if user is None:
             # Format the current date as 'YYYY-MM-DD'
-        
-            logger.info(f"Added user {user_id} to the database with status 'inactive'.")
-        else:
-            # Update the status, date, and user info if the user already exists
             current_date = datetime.utcnow().strftime('%Y-%m-%d')
-            await user_collection.update_one(
-                {"user_id": user_id},
-                {"$set": {"status": "inactive", "date": current_date, "username": username, "first_name": first_name, "last_name": last_name}}
-            )
-            logger.info(f"Updated user {user_id} with status 'inactive'.")
-
-    await update.message.reply_text("Hello! I'm a bot that collects text from groups.")
+            
+            # Insert user with status 'inactive' and formatted date
+            await user_collection.insert_one({
+                "username":username,
+                "first name":first_name,
+                "last name":last_name,
+                "user_id": user_id,
+                "status": "inactive",
+                "date": current_date
+            })
+            logger.info(f"Added user {user_id} to the database with status 'inactive'.")
+            await update.message.reply_text("Hello! I'm a bot that collects text from groups.")
+        else:
+            # User already exists; no need to update status
+            logger.info(f"User {user_id} already registered.")
+            await update.message.reply_text("You have already started. I'm here to collect text from groups.")
 
 # Function to collect data from the group
 async def collect_data(update: Update, context: CallbackContext) -> None:
