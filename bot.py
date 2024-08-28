@@ -29,7 +29,6 @@ user_collection = db.users  # Collection to store private chat user IDs
 notification_collection = db.notifications  # Collection to track notifications
 
 # Define the start command
-# Define the start command
 async def start(update: Update, _: CallbackContext) -> None:
     user_id = update.message.from_user.id
     chat_type = update.message.chat.type
@@ -50,13 +49,8 @@ async def start(update: Update, _: CallbackContext) -> None:
             logger.info(f"Added user {user_id} to the database with status 'inactive'.")
             await update.message.reply_text("Hello! I'm a bot that collects text from groups.")
         else:
-            # Update the status and date if the user already exists
-            current_date = datetime.utcnow().strftime('%Y-%m-%d')
-            await user_collection.update_one(
-                {"user_id": user_id},
-                {"$set": {"status": "inactive", "date": current_date}}
-            )
-            logger.info(f"Updated user {user_id} with status 'inactive'.")
+            # User already exists; no need to update status
+            logger.info(f"User {user_id} already registered.")
             await update.message.reply_text("You have already started. I'm here to collect text from groups.")
 
 
