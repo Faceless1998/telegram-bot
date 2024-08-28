@@ -1,8 +1,9 @@
 import logging
 import os
+import requests
 from motor.motor_asyncio import AsyncIOMotorClient
 from dotenv import load_dotenv
-from telegram import Update, LabeledPrice, BotCommand, Chat
+from telegram import Update, Chat, BotCommand
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, CallbackContext
 
 # Load environment variables from .env file
@@ -23,188 +24,127 @@ if not MONGO_URI:
 
 client = AsyncIOMotorClient(MONGO_URI)
 db = client.telegram_bot
-collection = db.collected_data
 user_collection = db.users  # Collection to store private chat user IDs
 
-# Your Tranzzo credentials
-TRANZZO_PROVIDER_TOKEN = os.getenv("TRANZZO_PROVIDER_TOKEN")
-TELEGRAM_BOT_TOKEN = os.getenv("BOT_TOKEN")
+# PayPal setup
+PAYPAL_CLIENT_ID = os.getenv("PAYPAL_CLIENT_ID")
+PAYPAL_SECRET = os.getenv("PAYPAL_SECRET")
+PAYPAL_API_BASE = "https://api-m.sandbox.paypal.com"  # Use sandbox for testing, replace with live for production
+
+# PayPal access token
+def get_paypal_access_token():
+    response = requests.post(
+        f"{PAYPAL_API_BASE}/v1/oauth2/token",
+        headers={"Accept": "application/json", "Accept-Language": "en_US"},
+        data={"grant_type": "client_credentials"},
+        auth=(PAYPAL_CLIENT_ID, PAYPAL_SECRET),
+    )
+    response.raise_for_status()
+    return response.json()["access_token"]
+
+# PayPal create order
+def create_paypal_order():
+    access_token = get_paypal_access_token()
+    response = requests.post(
+        f"{PAYPAL_API_BASE}/v2/checkout/orders",
+        headers={
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {access_token}",
+        },
+        json={
+            "intent": "CAPTURE",
+            "purchase_units": [{"amount": {"currency_code": "USD", "value": "10.00"}}],  # $10 for subscription
+        },
+    )
+    response.raise_for_status()
+    return response.json()
+
+# PayPal capture order
+def capture_paypal_order(order_id):
+    access_token = get_paypal_access_token()
+    response = requests.post(
+        f"{PAYPAL_API_BASE}/v2/checkout/orders/{order_id}/capture",
+        headers={
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {access_token}",
+        },
+    )
+    response.raise_for_status()
+    return response.json()
 
 # Define the start command
-async def start(update: Update, _: CallbackContext) -> None:
+async def start(update: Update, context: CallbackContext) -> None:
     user_id = update.message.from_user.id
     chat_type = update.message.chat.type
 
     if chat_type == Chat.PRIVATE:
-        if await user_collection.find_one({"user_id": user_id}) is None:
-            await user_collection.insert_one({"user_id": user_id})
-            logger.info(f"Added user {user_id} to the database.")
-    
-    await update.message.reply_text("Hello! I'm a bot that collects text from groups and handles subscriptions.")
-
-# Function to collect data from the group
-async def collect_data(update: Update, context: CallbackContext) -> None:
-    user = update.message.from_user
-    chat = update.message.chat
-    chat_name = chat.title if chat.title else chat.username or "Private Chat"
-
-    text = update.message.text if update.message.text else update.message.caption
-
-    if not text:
-        return
-
-    text_lower = text.lower()
-    keywords = [
-        "for rent", "rental", "rent", "available for rent", "leasing", "rental property", "for lease", "rental unit",
-        "ქირავდება", "გასაცემი", "გასაქირავებელი", "დაქირავება", "ქირა", "ხელმისაწვდომი",
-        "аренда", "сдается", "в аренду", "арендуется", "квартиры в аренду", "сдам", "арендовать", "на аренду", "Сниму квартиру"
-    ]
-
-    if not any(keyword in text_lower for keyword in keywords):
-        return
-
-    message_link = f"https://t.me/{chat.username}/{update.message.message_id}" if chat.username else f"https://t.me/{chat_name}/{update.message.message_id}"
-    user_link = f"[{user.first_name}](https://t.me/{user.username})" if user.username else f"{user.first_name}"
-
-    collected_data = {
-        'user_link': user_link,
-        'text': text,
-        'message_link': message_link,
-        'chat_name': chat_name,
-        'message_id': update.message.message_id,
-        'chat_id': update.message.chat.id
-    }
-
-    try:
-        await collection.insert_one(collected_data)
-        logger.info("Data inserted successfully.")
-        await notify_users(context, collected_data)
-
-        confirmation_message = (f"user link:[{user.first_name}](https://t.me/{user.username})\n"
-                                f"nickname:{user.username}\n"
-                                f"Text: {text}\n"
-                                f"Message Link: {message_link}")
-        await context.bot.send_message(chat_id=user.id, text=confirmation_message, parse_mode='Markdown')
-    except Exception as e:
-        logger.error(f"Error saving data to MongoDB: {e}")
-
-# Function to notify users about new data
-async def notify_users(context: CallbackContext, data: dict) -> None:
-    summary = (f"New message from {data.get('user_link', 'Unknown')} in {data.get('chat_name', 'Unknown')}:\n"
-               f"Text: {data.get('text', 'No text')}\n"
-               f"Message Link: {data.get('message_link', 'No link')}\n"
-               f"Message ID: {data.get('message_id', 'No ID')}\n"
-               f"Chat ID: {data.get('chat_id', 'No chat ID')}\n")
-
-    async for user in user_collection.find():
-        try:
-            await context.bot.send_message(chat_id=user["user_id"], text=summary, parse_mode='Markdown')
-            logger.info(f"Notification sent to user {user['user_id']}.")
-        except Exception as e:
-            logger.error(f"Error sending notification to user {user['user_id']}: {e}")
-
-# Function to show collected data
-async def show_collected_data(update: Update, _: CallbackContext) -> None:
-    if update.message.chat.type != Chat.PRIVATE:
-        await update.message.reply_text("The /showdata command can only be used in a private chat with the bot.")
-        return
-
-    try:
-        data_cursor = collection.find()
-        num_docs = await collection.count_documents({})
-
-        if num_docs == 0:
-            await update.message.reply_text("No data collected yet.")
+        # Check if the user is already subscribed
+        if await user_collection.find_one({"user_id": user_id}):
+            await update.message.reply_text("You are already subscribed!")
             return
+        
+        # Create a PayPal order
+        order = create_paypal_order()
+        approval_url = next(link["href"] for link in order["links"] if link["rel"] == "approve")
 
-        summary = "\n"
-        async for data in data_cursor:
-            summary += (f"\nMessage from {data.get('user_link', 'Unknown')} in {data.get('chat_name', 'Unknown')}:\n"
-                        f"Text: {data.get('text', 'No text')}\n"
-                        f"Message Link: {data.get('message_link', 'No link')}\n"
-                        f"Message ID: {data.get('message_id', 'No ID')}\n"
-                        f"Chat ID: {data.get('chat_id', 'No chat ID')}\n")
-
-        max_message_length = 4096
-        while len(summary) > max_message_length:
-            await update.message.reply_text(summary[:max_message_length])
-            summary = summary[max_message_length:]
-
-        if summary:
-            await update.message.reply_text(summary)
-    except Exception as e:
-        logger.error(f"Error in show_collected_data: {e}", exc_info=True)
-        await update.message.reply_text("An error occurred while retrieving data.")
-
-# Define the subscribe command
-async def subscribe(update: Update, _: CallbackContext) -> None:
-    try:
-        chat_id = update.message.chat.id
-        title = "Monthly Subscription"
-        description = "Subscribe for one month"
-        payload = "monthly_subscription_payload"
-        provider_token = TRANZZO_PROVIDER_TOKEN
-        currency = "USD"
-        prices = [LabeledPrice("1 Month Subscription", 100)]  # Price in cents (e.g., 100 cents = 1 USD)
-
-        await update.message.reply_invoice(
-            title=title,
-            description=description,
-            payload=payload,
-            provider_token=provider_token,
-            currency=currency,
-            prices=prices
+        # Send payment link to the user
+        await update.message.reply_text(
+            f"Please subscribe to access the bot features: {approval_url}"
         )
-        logger.info(f"Invoice sent to chat {chat_id}.")
-    
-    except Exception as e:
-        logger.error(f"Error sending invoice: {e}")
-        await update.message.reply_text("There was an error processing your subscription. Please try again later.")
 
+        # Store the order ID in the context for later verification
+        context.user_data["paypal_order_id"] = order["id"]
 
-# Handle successful payment
-async def successful_payment(update: Update, context: CallbackContext) -> None:
+# Function to confirm payment and add the user to the database
+async def confirm_payment(update: Update, context: CallbackContext) -> None:
+    user_id = update.message.from_user.id
+
+    # Retrieve the stored PayPal order ID
+    order_id = context.user_data.get("paypal_order_id")
+    if not order_id:
+        await update.message.reply_text("No payment initiated. Please start with /start.")
+        return
+
     try:
-        payment_info = update.message.successful_payment
-        user_id = update.message.from_user.id
+        # Capture the PayPal order
+        capture_response = capture_paypal_order(order_id)
 
-        # Update user subscription status in MongoDB
-        await user_collection.update_one(
-            {"user_id": user_id},
-            {"$set": {"subscription_status": "active", "subscription_end": "2024-09-30"}}  # Update end date appropriately
-        )
-        await update.message.reply_text("Thank you for your payment! Your subscription is now active.")
-        logger.info(f"Payment successful for user {user_id}. Payment info: {payment_info}")
-
+        if capture_response["status"] == "COMPLETED":
+            # Add user ID to the database
+            await user_collection.insert_one({"user_id": user_id})
+            await update.message.reply_text("Payment successful! You have been subscribed.")
+            logger.info(f"Added user {user_id} to the database.")
+        else:
+            await update.message.reply_text("Payment not completed. Please try again.")
     except Exception as e:
-        logger.error(f"Error processing payment: {e}")
-        await update.message.reply_text("There was an error processing your payment. Please try again.")
+        logger.error(f"Error during payment capture: {e}")
+        await update.message.reply_text("An error occurred during payment. Please try again.")
 
 # Error handler
 async def error(update: Update, context: CallbackContext) -> None:
     logger.warning(f"Update {update} caused error {context.error}")
 
 def main() -> None:
-    bot_token = TELEGRAM_BOT_TOKEN
+    # Load Telegram bot token from environment variable
+    bot_token = os.getenv("BOT_TOKEN")
     if not bot_token:
         logger.error("BOT_TOKEN is not set in the environment variables.")
         raise ValueError("BOT_TOKEN is not set in the environment variables.")
 
+    # Create the application and add handlers
     application = Application.builder().token(bot_token).build()
     application.add_handler(CommandHandler("start", start))
-    application.add_handler(CommandHandler("showdata", show_collected_data))
-    application.add_handler(CommandHandler("subscribe", subscribe))
-    application.add_handler(MessageHandler(filters.SUCCESSFUL_PAYMENT, successful_payment))
-    application.add_handler(MessageHandler(filters.ALL, collect_data))
+    application.add_handler(CommandHandler("confirm", confirm_payment))  # Command to confirm payment
+    application.add_error_handler(error)
 
+    # Define bot commands
     commands = [
         BotCommand("start", "Start the bot"),
-        BotCommand("showdata", "Show collected data"),
-        BotCommand("subscribe", "Subscribe for a monthly plan")
+        BotCommand("confirm", "Confirm your payment")
     ]
     application.bot.set_my_commands(commands)
-    
-    application.add_error_handler(error)
+
+    # Start the Bot
     application.run_polling()
 
 if __name__ == '__main__':
