@@ -40,6 +40,16 @@ service_state = {
     ]
 }
 
+def generate_service_keyboard() -> InlineKeyboardMarkup:
+    keyboard = []
+    for service, is_on in service_state.items():
+        color = "🟢" if is_on else "🔴"
+        button_text = f"{color} {service}"
+        callback_data = f"{service}_on" if not is_on else f"{service}_off"
+        button = InlineKeyboardButton(button_text, callback_data=callback_data)
+        keyboard.append([button])
+    return InlineKeyboardMarkup(keyboard)
+
 async def start(update: Update, _: CallbackContext) -> None:
     user = update.message.from_user
     chat_type = update.message.chat.type
@@ -71,15 +81,7 @@ async def start(update: Update, _: CallbackContext) -> None:
             await update.message.reply_text("You have already started. I'm here to collect text from groups.")
 
 async def services(update: Update, _: CallbackContext) -> None:
-    keyboard = []
-    for service, is_on in service_state.items():
-        color = "🟢" if is_on else "🔴"
-        button_text = f"{color} {service}"
-        callback_data = f"{service}_on" if not is_on else f"{service}_off"
-        button = InlineKeyboardButton(button_text, callback_data=callback_data)
-        keyboard.append([button])
-
-    reply_markup = InlineKeyboardMarkup(keyboard)
+    reply_markup = generate_service_keyboard()
     await update.message.reply_text("Please choose a service:", reply_markup=reply_markup)
 
 async def button(update: Update, context: CallbackContext) -> None:
@@ -96,10 +98,7 @@ async def button(update: Update, context: CallbackContext) -> None:
         callback_data = f"{service_name}_on"
 
     await query.answer()
-    await query.edit_message_text(text=response_text)
-
-    # Optionally, update the message with new buttons reflecting the updated state
-    await services(update, context)
+    await query.edit_message_text(text=response_text, reply_markup=generate_service_keyboard())
 
 # Function to collect data from the group
 async def collect_data(update: Update, context: CallbackContext) -> None:
