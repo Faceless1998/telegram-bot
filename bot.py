@@ -58,6 +58,21 @@ async def start(update: Update, _: CallbackContext) -> None:
             logger.info(f"User {user_id} already registered.")
             await update.message.reply_text("You have already started. I'm here to collect text from groups.")
 
+async def services(update: Update, _: CallbackContext) -> None:
+    services_list = [
+        "Renters Real Estate", "Sellers Real Estate", "Landlords Real Estate",
+        "Currency and Crypto Exchange", "Buyers Real Estate", "Residence Permit",
+        "Short-Term Renters", "Room or Hostel Renters", "Owners Real Estate",
+        "AI - Renters Real Estate", "Renters Cars", "Landlords Cars", "Transfer",
+        "Bike Rentals", "Yacht Rentals", "Excursions", "Massage", "Cleaning",
+        "Photography", "Insurance", "Manicure"
+    ]
+    
+    keyboard = [[InlineKeyboardButton(service, callback_data=service)] for service in services_list]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    await update.message.reply_text("Please choose a service:", reply_markup=reply_markup)
+
 # Function to collect data from the group
 async def collect_data(update: Update, context: CallbackContext) -> None:
     user = update.message.from_user
@@ -142,9 +157,13 @@ def main() -> None:
 
     application = Application.builder().token(bot_token).build()
     application.add_handler(CommandHandler("start", start))
+    application.add_handler(CommandHandler("services", services))
     application.add_handler(MessageHandler(filters.ALL, collect_data))
     
-    commands = [BotCommand("start", "Start the bot")]
+    commands = [
+        BotCommand("start", "Start the bot"),
+        BotCommand("services", "List of services")
+    ]
     application.bot.set_my_commands(commands)
     
     application.add_error_handler(error)
