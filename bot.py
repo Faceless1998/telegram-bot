@@ -273,9 +273,7 @@ async def button(update: Update, context: CallbackContext) -> None:
         selected_services.append(service_name)
 
         if len(selected_services) == 1:
-            trial_end_date = (datetime.utcnow() + timedelta(days=3)).strftime(
-                "%Y-%m-%d"
-            )
+            trial_end_date = (datetime.utcnow() + timedelta(days=3)).strftime("%Y-%m-%d")
         else:
             trial_end_date = (
                 datetime.utcnow()
