@@ -70,10 +70,10 @@ async def services(update: Update, _: CallbackContext) -> None:
 
     keyboard = []
     for service in services_list:
-        keyboard.append([
-            InlineKeyboardButton(f"{service} On", callback_data=f"{service}_on"),
-            InlineKeyboardButton(f"{service} Off", callback_data=f"{service}_off")
-        ])
+        # Use emojis to represent red color buttons
+        on_button = InlineKeyboardButton(f"🔴 {service} On", callback_data=f"{service}_on")
+        off_button = InlineKeyboardButton(f"🔴 {service} Off", callback_data=f"{service}_off")
+        keyboard.append([on_button, off_button])
 
     reply_markup = InlineKeyboardMarkup(keyboard)
     await update.message.reply_text("Please choose a service:", reply_markup=reply_markup)
