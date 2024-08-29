@@ -285,6 +285,7 @@ async def button(update: Update, context: CallbackContext) -> None:
             {"user_id": user.id},
             {"$set": {"services": selected_services, "trial_end_date": trial_end_date}},
         )
+        
     elif status == "off":
         service_state[service_name] = False
 
