@@ -72,7 +72,8 @@ async def start(update: Update, _: CallbackContext) -> None:
                 "last_name": last_name,
                 "user_id": user_id,
                 "status": True,  # Set status to True for active
-                "trial_end_date": trial_end_date
+                "trial_end_date": trial_end_date,
+                "services": []  # Store the selected services
             })
             logger.info(f"Added user {user_id} to the database with status 'True'.")
             await update.message.reply_text("Hello! I'm a bot that collects text from groups. You have a 3-day free trial.")
@@ -86,19 +87,42 @@ async def services(update: Update, _: CallbackContext) -> None:
 
 async def button(update: Update, context: CallbackContext) -> None:
     query = update.callback_query
+    user = query.from_user
+    user_data = await user_collection.find_one({"user_id": user.id})
+
     service_name, status = query.data.rsplit('_', 1)
 
     if status == "on":
         service_state[service_name] = True
-        response_text = f"{service_name} is now enabled. 🟢"
-        callback_data = f"{service_name}_off"
+
+        # Update user's selected services and adjust trial period
+        selected_services = user_data.get("services", [])
+        selected_services.append(service_name)
+
+        if len(selected_services) == 1:
+            trial_end_date = (datetime.utcnow() + timedelta(days=3)).strftime('%Y-%m-%d')
+        else:
+            trial_end_date = datetime.utcnow().replace(hour=23, minute=59, second=59).strftime('%Y-%m-%d %H:%M:%S')
+
+        await user_collection.update_one(
+            {"user_id": user.id},
+            {"$set": {"services": selected_services, "trial_end_date": trial_end_date}}
+        )
     elif status == "off":
         service_state[service_name] = False
-        response_text = f"{service_name} is now disabled. 🔴"
-        callback_data = f"{service_name}_on"
+
+        # Update user's selected services
+        selected_services = user_data.get("services", [])
+        if service_name in selected_services:
+            selected_services.remove(service_name)
+
+        await user_collection.update_one(
+            {"user_id": user.id},
+            {"$set": {"services": selected_services}}
+        )
 
     await query.answer()
-    await query.edit_message_text(text=response_text, reply_markup=generate_service_keyboard())
+    await query.edit_message_text(text="choose service", reply_markup=generate_service_keyboard())
 
 # Function to collect data from the group
 async def collect_data(update: Update, context: CallbackContext) -> None:
@@ -156,7 +180,10 @@ async def notify_users(context: CallbackContext, data: dict) -> None:
         user_id = user["user_id"]
         trial_end_date_str = user.get("trial_end_date")
         if trial_end_date_str:
-            trial_end_date = datetime.strptime(trial_end_date_str, '%Y-%m-%d')
+            try:
+                trial_end_date = datetime.strptime(trial_end_date_str, '%Y-%m-%d %H:%M:%S')
+            except ValueError:
+                trial_end_date = datetime.strptime(trial_end_date_str, '%Y-%m-%d')
             if datetime.utcnow() >= trial_end_date:
                 await user_collection.update_one({"user_id": user_id}, {"$set": {"status": False}})  # Update to False when trial ends
                 logger.info(f"User {user_id} trial period ended. Status changed to 'False'.")
@@ -183,18 +210,17 @@ def main() -> None:
         raise ValueError("BOT_TOKEN is not set in the environment variables.")
 
     application = Application.builder().token(bot_token).build()
+
+    # Add handlers
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("services", services))
-    application.add_handler(MessageHandler(filters.ALL, collect_data))
-    application.add_handler(CallbackQueryHandler(button))  # Handle button presses
-    
-    commands = [
-        BotCommand("start", "Start the bot"),
-        BotCommand("services", "List of services")
-    ]
-    application.bot.set_my_commands(commands)
-    
+    application.add_handler(CallbackQueryHandler(button))
+    application.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), collect_data))
+
+    # Log all errors
     application.add_error_handler(error)
+
+    # Start the Bot
     application.run_polling()
 
 if __name__ == '__main__':
