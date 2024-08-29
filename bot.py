@@ -28,17 +28,33 @@ collection = db.collected_data
 user_collection = db.users  # Collection to store private chat user IDs
 notification_collection = db.notifications  # Collection to track notifications
 
-# Initial service state (default is off)
-service_state = {
-    service: False for service in [
-        "Renters Real Estate", "Sellers Real Estate", "Landlords Real Estate",
-        "Currency and Crypto Exchange", "Buyers Real Estate", "Residence Permit",
-        "Short-Term Renters", "Room or Hostel Renters", "Owners Real Estate",
-        "AI - Renters Real Estate", "Renters Cars", "Landlords Cars", "Transfer",
-        "Bike Rentals", "Yacht Rentals", "Excursions", "Massage", "Cleaning",
-        "Photography", "Insurance", "Manicure"
-    ]
+# Keyword mapping for each service
+service_keywords = {
+    "Renters Real Estate": ["for rent", "rental", "rent", "available for rent", "leasing", "rental property", "for lease", "rental unit"],
+    "Sellers Real Estate": ["for sale", "selling", "buy property", "house for sale", "property for sale"],
+    "Landlords Real Estate": ["landlord", "landlord needed", "rent out", "property management"],
+    "Currency and Crypto Exchange": ["currency exchange", "crypto exchange", "buy bitcoin", "sell bitcoin", "forex", "crypto trading"],
+    "Buyers Real Estate": ["buy house", "buy property", "property purchase", "real estate investment"],
+    "Residence Permit": ["residence permit", "visa", "immigration", "work permit", "residency"],
+    "Short-Term Renters": ["short-term rental", "vacation rental", "holiday home", "airbnb", "temporary accommodation"],
+    "Room or Hostel Renters": ["room for rent", "hostel", "shared accommodation", "hostel vacancy", "roommate needed"],
+    "Owners Real Estate": ["property owner", "own property", "real estate owner", "own house", "property portfolio"],
+    "AI - Renters Real Estate": ["ai rental", "ai real estate", "smart rental", "ai property management"],
+    "Renters Cars": ["car rental", "rent a car", "car lease", "vehicle rental", "rental car available"],
+    "Landlords Cars": ["rent out car", "car lease", "car available for rent"],
+    "Transfer": ["airport transfer", "shuttle service", "transport service", "pickup and drop", "travel transfer"],
+    "Bike Rentals": ["bike rental", "rent a bike", "bicycle rental", "bike hire"],
+    "Yacht Rentals": ["yacht rental", "rent a yacht", "boat rental", "yacht hire", "luxury boat rental"],
+    "Excursions": ["excursion", "guided tour", "day trip", "sightseeing tour", "tourist attraction"],
+    "Massage": ["massage service", "spa treatment", "therapeutic massage", "relaxation massage"],
+    "Cleaning": ["cleaning service", "house cleaning", "office cleaning", "maid service", "deep cleaning"],
+    "Photography": ["photography service", "event photography", "portrait photography", "photo shoot", "professional photographer"],
+    "Insurance": ["insurance", "life insurance", "health insurance", "car insurance", "property insurance"],
+    "Manicure": ["manicure", "nail salon", "nail treatment", "nail care", "nail art"]
 }
+
+# Initial service state (default is off)
+service_state = {service: False for service in service_keywords}
 
 def generate_service_keyboard() -> InlineKeyboardMarkup:
     keyboard = []
@@ -122,9 +138,8 @@ async def button(update: Update, context: CallbackContext) -> None:
         )
 
     await query.answer()
-    await query.edit_message_text(text="choose service", reply_markup=generate_service_keyboard())
+    await query.edit_message_text(text="Choose service", reply_markup=generate_service_keyboard())
 
-# Function to collect data from the group
 async def collect_data(update: Update, context: CallbackContext) -> None:
     user = update.message.from_user
     chat = update.message.chat
@@ -135,13 +150,12 @@ async def collect_data(update: Update, context: CallbackContext) -> None:
         return
 
     text_lower = text.lower()
-    keywords = [
-        "for rent", "rental", "rent", "available for rent", "leasing", "rental property", "for lease", "rental unit",
-        "ქირავდება", "გასაცემი", "გასაქირავებელი", "დაქირავება", "ქირა", "ხელმისაწვდომი",
-        "аренда", "сдается", "арендуется", "арендовать", "на аренду", "Сниму"
-    ]
 
-    if not any(keyword in text_lower for keyword in keywords):
+    # Get the list of selected services for the user
+    user_data = await user_collection.find_one({"user_id": user.id})
+    selected_services = user_data.get("services", [])
+
+    if not any(any(keyword in text_lower for keyword in service_keywords[service]) for service in selected_services):
         return
 
     if chat.username:
@@ -166,62 +180,39 @@ async def collect_data(update: Update, context: CallbackContext) -> None:
     except Exception as e:
         logger.error(f"Error saving data to MongoDB: {e}")
 
-# Function to notify users about new data
 async def notify_users(context: CallbackContext, data: dict) -> None:
     summary = f"{data.get('text', 'No text')}"
     buttons = []
-    if data.get('user_link'):
-        buttons.append(InlineKeyboardButton(text="User Link", url=data['user_link']))
-    if data.get('message_link'):
-        buttons.append(InlineKeyboardButton(text="Message Link", url=data['message_link']))
-    reply_markup = InlineKeyboardMarkup([[*buttons]])
+    for service in service_keywords.keys():
+        buttons.append([InlineKeyboardButton(service, callback_data=service)])
 
-    async for user in user_collection.find({"status": True}):  # Only notify active users
-        user_id = user["user_id"]
-        trial_end_date_str = user.get("trial_end_date")
-        if trial_end_date_str:
-            try:
-                trial_end_date = datetime.strptime(trial_end_date_str, '%Y-%m-%d %H:%M:%S')
-            except ValueError:
-                trial_end_date = datetime.strptime(trial_end_date_str, '%Y-%m-%d')
-            if datetime.utcnow() >= trial_end_date:
-                await user_collection.update_one({"user_id": user_id}, {"$set": {"status": False}})  # Update to False when trial ends
-                logger.info(f"User {user_id} trial period ended. Status changed to 'False'.")
-                continue
-
-        if await notification_collection.find_one({"user_id": user_id, "message_id": data['message_id']}):
-            continue
-
+    for chat in await notification_collection.find().to_list(length=None):
         try:
-            await context.bot.send_message(chat_id=user_id, text=summary, reply_markup=reply_markup)
-            logger.info(f"Notification sent to user {user_id}.")
-            await notification_collection.insert_one({"user_id": user_id, "message_id": data['message_id']})
+            await context.bot.send_message(
+                chat_id=chat['chat_id'],
+                text=summary,
+                reply_markup=InlineKeyboardMarkup(buttons)
+            )
         except Exception as e:
-            logger.error(f"Error sending notification to user {user_id}: {e}")
+            logger.error(f"Error sending notification: {e}")
 
-# Error handler
-async def error(update: Update, context: CallbackContext) -> None:
-    logger.warning(f"Update {update} caused error {context.error}")
+async def main() -> None:
+    """Run the bot."""
+    application = Application.builder().token(os.getenv("TELEGRAM_BOT_TOKEN")).build()
 
-def main() -> None:
-    bot_token = os.getenv("BOT_TOKEN")
-    if not bot_token:
-        logger.error("BOT_TOKEN is not set in the environment variables.")
-        raise ValueError("BOT_TOKEN is not set in the environment variables.")
-
-    application = Application.builder().token(bot_token).build()
-
-    # Add handlers
+    # Add command handlers
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("services", services))
+
+    # Add message handler for text messages
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, collect_data))
+
+    # Add callback query handler for button presses
     application.add_handler(CallbackQueryHandler(button))
-    application.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), collect_data))
 
-    # Log all errors
-    application.add_error_handler(error)
+    # Run the bot
+    await application.run_polling()
 
-    # Start the Bot
-    application.run_polling()
-
-if __name__ == '__main__':
-    main()
+if __name__ == "__main__":
+    import asyncio
+    asyncio.run(main())
