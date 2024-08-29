@@ -136,7 +136,8 @@ async def remind_trial_end() -> None:
     now = datetime.utcnow()
     for days in [1, 2, 3]:
         reminder_date = now + timedelta(days=days)
-        async for user in user_collection.find({"status": True, "trial_end_date": reminder_date.strftime('%Y-%m-%d')}):
+        reminder_date_str = reminder_date.strftime('%Y-%m-%d')
+        async for user in user_collection.find({"status": True, "trial_end_date": reminder_date_str}):
             user_id = user["user_id"]
             try:
                 await context.bot.send_message(
@@ -166,9 +167,9 @@ def main() -> None:
     
     application.add_error_handler(error)
     
-    # Schedule the reminder job
+    # Schedule the reminder job to run daily at 14:49
     scheduler = AsyncIOScheduler()
-    scheduler.add_job(remind_trial_end, 'interval', days=1)  # Run daily
+    scheduler.add_job(remind_trial_end, 'cron', hour=14, minute=49)  # Run daily at 14:49
     scheduler.start()
 
     application.run_polling()
