@@ -1,7 +1,6 @@
 import logging
 import os
 from datetime import datetime, timedelta
-from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from motor.motor_asyncio import AsyncIOMotorClient
 from dotenv import load_dotenv
 from telegram import Update, Chat, BotCommand, InlineKeyboardButton, InlineKeyboardMarkup
@@ -131,23 +130,6 @@ async def notify_users(context: CallbackContext, data: dict) -> None:
         except Exception as e:
             logger.error(f"Error sending notification to user {user_id}: {e}")
 
-# Function to remind users about trial end
-async def remind_trial_end() -> None:
-    now = datetime.utcnow()
-    for days in [1, 2, 3]:
-        reminder_date = now + timedelta(days=days)
-        reminder_date_str = reminder_date.strftime('%Y-%m-%d')
-        async for user in user_collection.find({"status": True, "trial_end_date": reminder_date_str}):
-            user_id = user["user_id"]
-            try:
-                await context.bot.send_message(
-                    chat_id=user_id,
-                    text=f"Reminder: Your trial period ends in {days} day(s). Please consider subscribing to continue using the bot."
-                )
-                logger.info(f"Trial end reminder sent to user {user_id}.")
-            except Exception as e:
-                logger.error(f"Error sending trial end reminder to user {user_id}: {e}")
-
 # Error handler
 async def error(update: Update, context: CallbackContext) -> None:
     logger.warning(f"Update {update} caused error {context.error}")
@@ -166,12 +148,6 @@ def main() -> None:
     application.bot.set_my_commands(commands)
     
     application.add_error_handler(error)
-    
-    # Schedule the reminder job to run daily at 14:49
-    scheduler = AsyncIOScheduler()
-    scheduler.add_job(remind_trial_end, 'cron', hour=14, minute=49)  # Run daily at 14:49
-    scheduler.start()
-
     application.run_polling()
 
 if __name__ == '__main__':
