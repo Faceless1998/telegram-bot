@@ -6,6 +6,7 @@ from dotenv import load_dotenv
 from telegram import (
     Update,
     Chat,
+    BotCommand,
     InlineKeyboardButton,
     InlineKeyboardMarkup,
 )
@@ -39,26 +40,6 @@ collection = db.collected_data
 user_collection = db.users  # Collection to store private chat user IDs
 notification_collection = db.notifications  # Collection to track notifications
 
-# Define service keywords
-service_keywords = {
-    "Renters Real Estate": [
-        "for rent",
-        "rental",
-        "rent",
-        "available for rent",
-        "leasing",
-        "rental property",
-        "for lease",
-    ],
-    "Sellers Real Estate": ["sell", "selling", "property for sale", "real estate sale"],
-    "Landlords Real Estate": [
-        "landlord",
-        "landlord's property",
-        "property available for rent",
-    ],
-    # Add keywords for other services
-}
-
 # Initial service state (default is off)
 service_state = {
     service: False
@@ -85,6 +66,139 @@ service_state = {
         "Insurance",
         "Manicure",
     ]
+}
+
+
+service_keywords = {
+    "Renters Real Estate": [
+        "for rent",
+        "rental",
+        "rent",
+        "available for rent",
+        "leasing",
+        "rental property",
+        "for lease",
+        "rental unit",
+    ],
+    "Sellers Real Estate": [
+        "for sale",
+        "selling",
+        "buy property",
+        "house for sale",
+        "property for sale",
+    ],
+    "Landlords Real Estate": [
+        "landlord",
+        "landlord needed",
+        "rent out",
+        "property management",
+    ],
+    "Currency and Crypto Exchange": [
+        "currency exchange",
+        "crypto exchange",
+        "buy bitcoin",
+        "sell bitcoin",
+        "forex",
+        "crypto trading",
+    ],
+    "Buyers Real Estate": [
+        "buy house",
+        "buy property",
+        "property purchase",
+        "real estate investment",
+    ],
+    "Residence Permit": [
+        "residence permit",
+        "visa",
+        "immigration",
+        "work permit",
+        "residency",
+    ],
+    "Short-Term Renters": [
+        "short-term rental",
+        "vacation rental",
+        "holiday home",
+        "airbnb",
+        "temporary accommodation",
+    ],
+    "Room or Hostel Renters": [
+        "room for rent",
+        "hostel",
+        "shared accommodation",
+        "hostel vacancy",
+        "roommate needed",
+    ],
+    "Owners Real Estate": [
+        "property owner",
+        "own property",
+        "real estate owner",
+        "own house",
+        "property portfolio",
+    ],
+    "AI - Renters Real Estate": [
+        "ai rental",
+        "ai real estate",
+        "smart rental",
+        "ai property management",
+    ],
+    "Renters Cars": [
+        "car rental",
+        "rent a car",
+        "car lease",
+        "vehicle rental",
+        "rental car available",
+    ],
+    "Landlords Cars": ["rent out car", "car lease", "car available for rent"],
+    "Transfer": [
+        "airport transfer",
+        "shuttle service",
+        "transport service",
+        "pickup and drop",
+        "travel transfer",
+    ],
+    "Bike Rentals": ["bike rental", "rent a bike", "bicycle rental", "bike hire"],
+    "Yacht Rentals": [
+        "yacht rental",
+        "rent a yacht",
+        "boat rental",
+        "yacht hire",
+        "luxury boat rental",
+    ],
+    "Excursions": [
+        "excursion",
+        "guided tour",
+        "day trip",
+        "sightseeing tour",
+        "tourist attraction",
+    ],
+    "Massage": [
+        "massage service",
+        "spa treatment",
+        "therapeutic massage",
+        "relaxation massage",
+    ],
+    "Cleaning": [
+        "cleaning service",
+        "house cleaning",
+        "office cleaning",
+        "maid service",
+        "deep cleaning",
+    ],
+    "Photography": [
+        "photography service",
+        "event photography",
+        "portrait photography",
+        "photo shoot",
+        "professional photographer",
+    ],
+    "Insurance": [
+        "insurance",
+        "life insurance",
+        "health insurance",
+        "car insurance",
+        "property insurance",
+    ],
+    "Manicure": ["manicure", "nail salon", "nail treatment", "nail care", "nail art"],
 }
 
 
@@ -193,6 +307,7 @@ async def button(update: Update, context: CallbackContext) -> None:
     )
 
 
+# Function to collect data from the group
 async def collect_data(update: Update, context: CallbackContext) -> None:
     user = update.message.from_user
     chat = update.message.chat
@@ -203,19 +318,30 @@ async def collect_data(update: Update, context: CallbackContext) -> None:
         return
 
     text_lower = text.lower()
+    keywords = [
+        "for rent",
+        "rental",
+        "rent",
+        "available for rent",
+        "leasing",
+        "rental property",
+        "for lease",
+        "rental unit",
+        "ქირავდება",
+        "გასაცემი",
+        "გასაქირავებელი",
+        "დაქირავება",
+        "ქირა",
+        "ხელმისაწვდომი",
+        "аренда",
+        "сдается",
+        "арендуется",
+        "арендовать",
+        "на аренду",
+        "Сниму",
+    ]
 
-    # Fetch user's selected services
-    user_data = await user_collection.find_one({"user_id": user.id})
-    selected_services = user_data.get("services", [])
-
-    # Check if the text matches any keyword from the selected services
-    matched_keywords = []
-    for service in selected_services:
-        keywords = service_keywords.get(service, [])
-        if any(keyword in text_lower for keyword in keywords):
-            matched_keywords.append(service)
-
-    if not matched_keywords:
+    if not any(keyword in text_lower for keyword in keywords):
         return
 
     if chat.username:
@@ -231,7 +357,6 @@ async def collect_data(update: Update, context: CallbackContext) -> None:
         "message_link": message_link,
         "chat_name": chat_name,
         "message_id": update.message.message_id,
-        "matched_services": matched_keywords,
     }
 
     try:
@@ -242,6 +367,7 @@ async def collect_data(update: Update, context: CallbackContext) -> None:
         logger.error(f"Error saving data to MongoDB: {e}")
 
 
+# Function to notify users about new data
 async def notify_users(context: CallbackContext, data: dict) -> None:
     summary = f"{data.get('text', 'No text')}"
     buttons = []
@@ -268,7 +394,7 @@ async def notify_users(context: CallbackContext, data: dict) -> None:
             if datetime.utcnow() >= trial_end_date:
                 await user_collection.update_one(
                     {"user_id": user_id}, {"$set": {"status": False}}
-                )
+                )  # Update to False when trial ends
                 logger.info(
                     f"User {user_id} trial period ended. Status changed to 'False'."
                 )
@@ -279,42 +405,43 @@ async def notify_users(context: CallbackContext, data: dict) -> None:
         ):
             continue
 
-        # Notify users based on their selected services
-        user_services = user.get("services", [])
-        if any(
-            service in data.get("matched_services", []) for service in user_services
-        ):
-            try:
-                await context.bot.send_message(
-                    chat_id=user_id, text=summary, reply_markup=reply_markup
-                )
-                logger.info(f"Notification sent to user {user_id}.")
-                await notification_collection.insert_one(
-                    {"user_id": user_id, "message_id": data["message_id"]}
-                )
-            except Exception as e:
-                logger.error(f"Error sending notification to user {user_id}: {e}")
+        try:
+            await context.bot.send_message(
+                chat_id=user_id, text=summary, reply_markup=reply_markup
+            )
+            logger.info(f"Notification sent to user {user_id}.")
+            await notification_collection.insert_one(
+                {"user_id": user_id, "message_id": data["message_id"]}
+            )
+        except Exception as e:
+            logger.error(f"Error sending notification to user {user_id}: {e}")
 
 
 # Error handler
 async def error(update: Update, context: CallbackContext) -> None:
-    logger.error(msg="Exception while handling an update:", exc_info=context.error)
+    logger.warning(f"Update {update} caused error {context.error}")
 
 
 def main() -> None:
-    """Run the bot."""
-    application = Application.builder().token(os.getenv("TELEGRAM_TOKEN")).build()
+    bot_token = os.getenv("BOT_TOKEN")
+    if not bot_token:
+        logger.error("BOT_TOKEN is not set in the environment variables.")
+        raise ValueError("BOT_TOKEN is not set in the environment variables.")
 
-    # Handlers
+    application = Application.builder().token(bot_token).build()
+
+    # Add handlers
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("services", services))
     application.add_handler(CallbackQueryHandler(button))
-    application.add_handler(MessageHandler(filters.TEXT | filters.PHOTO, collect_data))
+    application.add_handler(
+        MessageHandler(filters.TEXT & (~filters.COMMAND), collect_data)
+    )
 
     # Log all errors
     application.add_error_handler(error)
 
-    # Run the bot
+    # Start the Bot
     application.run_polling()
 
 
