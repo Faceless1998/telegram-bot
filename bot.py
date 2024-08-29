@@ -28,6 +28,18 @@ collection = db.collected_data
 user_collection = db.users  # Collection to store private chat user IDs
 notification_collection = db.notifications  # Collection to track notifications
 
+# Initial service state (default is off)
+service_state = {
+    service: False for service in [
+        "Renters Real Estate", "Sellers Real Estate", "Landlords Real Estate",
+        "Currency and Crypto Exchange", "Buyers Real Estate", "Residence Permit",
+        "Short-Term Renters", "Room or Hostel Renters", "Owners Real Estate",
+        "AI - Renters Real Estate", "Renters Cars", "Landlords Cars", "Transfer",
+        "Bike Rentals", "Yacht Rentals", "Excursions", "Massage", "Cleaning",
+        "Photography", "Insurance", "Manicure"
+    ]
+}
+
 async def start(update: Update, _: CallbackContext) -> None:
     user = update.message.from_user
     chat_type = update.message.chat.type
@@ -59,21 +71,13 @@ async def start(update: Update, _: CallbackContext) -> None:
             await update.message.reply_text("You have already started. I'm here to collect text from groups.")
 
 async def services(update: Update, _: CallbackContext) -> None:
-    services_list = [
-        "Renters Real Estate", "Sellers Real Estate", "Landlords Real Estate",
-        "Currency and Crypto Exchange", "Buyers Real Estate", "Residence Permit",
-        "Short-Term Renters", "Room or Hostel Renters", "Owners Real Estate",
-        "AI - Renters Real Estate", "Renters Cars", "Landlords Cars", "Transfer",
-        "Bike Rentals", "Yacht Rentals", "Excursions", "Massage", "Cleaning",
-        "Photography", "Insurance", "Manicure"
-    ]
-
     keyboard = []
-    for service in services_list:
-        # Use emojis to represent red color buttons
-        on_button = InlineKeyboardButton(f"🔴 {service} On", callback_data=f"{service}_on")
-        off_button = InlineKeyboardButton(f"🔴 {service} Off", callback_data=f"{service}_off")
-        keyboard.append([on_button, off_button])
+    for service, is_on in service_state.items():
+        color = "🟢" if is_on else "🔴"
+        button_text = f"{color} {service}"
+        callback_data = f"{service}_on" if not is_on else f"{service}_off"
+        button = InlineKeyboardButton(button_text, callback_data=callback_data)
+        keyboard.append([button])
 
     reply_markup = InlineKeyboardMarkup(keyboard)
     await update.message.reply_text("Please choose a service:", reply_markup=reply_markup)
@@ -82,16 +86,20 @@ async def button(update: Update, context: CallbackContext) -> None:
     query = update.callback_query
     service_name, status = query.data.rsplit('_', 1)
 
-    # Process the button press
     if status == "on":
-        response_text = f"{service_name} is now enabled."
-        # Here you can add code to handle enabling the service, e.g., saving to a database
+        service_state[service_name] = True
+        response_text = f"{service_name} is now enabled. 🟢"
+        callback_data = f"{service_name}_off"
     elif status == "off":
-        response_text = f"{service_name} is now disabled."
-        # Here you can add code to handle disabling the service, e.g., saving to a database
+        service_state[service_name] = False
+        response_text = f"{service_name} is now disabled. 🔴"
+        callback_data = f"{service_name}_on"
 
     await query.answer()
     await query.edit_message_text(text=response_text)
+
+    # Optionally, update the message with new buttons reflecting the updated state
+    await services(update, context)
 
 # Function to collect data from the group
 async def collect_data(update: Update, context: CallbackContext) -> None:
