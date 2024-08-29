@@ -311,9 +311,11 @@ async def collect_data(update: Update, context: CallbackContext) -> None:
     text = update.message.text if update.message.text else update.message.caption
 
     if not text:
+        logger.warning("No text found in the message.")
         return
 
     text_lower = text.lower()
+    logger.info(f"Processing message: {text_lower}")
 
     # Determine if the text matches any keywords for the active services
     matched_services = []
@@ -322,6 +324,7 @@ async def collect_data(update: Update, context: CallbackContext) -> None:
             matched_services.append(service)
 
     if not matched_services:
+        logger.info("No matched services found.")
         return
 
     if chat.username:
@@ -341,11 +344,13 @@ async def collect_data(update: Update, context: CallbackContext) -> None:
     }
 
     try:
+        logger.info("Inserting data into MongoDB.")
         await collection.insert_one(collected_data)
         logger.info("Data inserted successfully.")
         await notify_users(context, collected_data)
     except Exception as e:
         logger.error(f"Error saving data to MongoDB: {e}")
+
 
 
 # Function to notify users about new data
