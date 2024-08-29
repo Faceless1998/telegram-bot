@@ -242,7 +242,7 @@ async def start(update: Update, _: CallbackContext) -> None:
             )
             logger.info(f"Added user {user_id} to the database with status 'True'.")
             await update.message.reply_text(
-                "Hello! I'm a bot that collects text from groups. You have a 3-day free trial."
+                "გამარჯობა, მე ვარ ბოტი რომელიც დაგეხმარებათ კლიენტების ძიებაში. დააჭირეთ ბრძანებას /services რათა იხილოთ ბოტის მიერ შეთავაზებული მომსახურებები"
             )
         else:
             logger.info(f"User {user_id} already registered.")
@@ -420,8 +420,11 @@ def main() -> None:
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("services", services))
     application.add_handler(CallbackQueryHandler(button))
+    application.add_handler(CallbackQueryHandler(button))
+
+    # Add a message handler for collecting data
     application.add_handler(
-        MessageHandler(filters.TEXT & (~filters.COMMAND), collect_data)
+        MessageHandler(filters.TEXT & ~filters.COMMAND, collect_data)
     )
 
     # Log all errors
@@ -430,6 +433,6 @@ def main() -> None:
     # Start the Bot
     application.run_polling()
 
-
 if __name__ == "__main__":
     main()
+
