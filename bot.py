@@ -227,9 +227,7 @@ async def start(update: Update, _: CallbackContext) -> None:
         # Check if the user is already in the database
         user_data = await user_collection.find_one({"user_id": user_id})
         if user_data is None:
-            trial_end_date = (datetime.utcnow() + timedelta(days=3)).strftime(
-                "%Y-%m-%d"
-            )
+            trial_end_date = (datetime.utcnow() + timedelta(days=3)).strftime("%Y-%m-%d")
 
             await user_collection.insert_one(
                 {
