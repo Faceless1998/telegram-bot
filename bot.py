@@ -4,7 +4,7 @@ from datetime import datetime, timedelta
 from motor.motor_asyncio import AsyncIOMotorClient
 from dotenv import load_dotenv
 from telegram import Update, Chat, BotCommand, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import Application, CommandHandler, MessageHandler, filters, CallbackContext
+from telegram.ext import Application, CommandHandler, MessageHandler, filters, CallbackContext, CallbackQueryHandler
 
 # Load environment variables from .env file
 load_dotenv()
@@ -67,11 +67,31 @@ async def services(update: Update, _: CallbackContext) -> None:
         "Bike Rentals", "Yacht Rentals", "Excursions", "Massage", "Cleaning",
         "Photography", "Insurance", "Manicure"
     ]
-    
-    keyboard = [[InlineKeyboardButton(service, callback_data=service)] for service in services_list]
+
+    keyboard = []
+    for service in services_list:
+        keyboard.append([
+            InlineKeyboardButton(f"{service} On", callback_data=f"{service}_on"),
+            InlineKeyboardButton(f"{service} Off", callback_data=f"{service}_off")
+        ])
+
     reply_markup = InlineKeyboardMarkup(keyboard)
-    
     await update.message.reply_text("Please choose a service:", reply_markup=reply_markup)
+
+async def button(update: Update, context: CallbackContext) -> None:
+    query = update.callback_query
+    service_name, status = query.data.rsplit('_', 1)
+
+    # Process the button press
+    if status == "on":
+        response_text = f"{service_name} is now enabled."
+        # Here you can add code to handle enabling the service, e.g., saving to a database
+    elif status == "off":
+        response_text = f"{service_name} is now disabled."
+        # Here you can add code to handle disabling the service, e.g., saving to a database
+
+    await query.answer()
+    await query.edit_message_text(text=response_text)
 
 # Function to collect data from the group
 async def collect_data(update: Update, context: CallbackContext) -> None:
@@ -159,6 +179,7 @@ def main() -> None:
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("services", services))
     application.add_handler(MessageHandler(filters.ALL, collect_data))
+    application.add_handler(CallbackQueryHandler(button))  # Handle button presses
     
     commands = [
         BotCommand("start", "Start the bot"),
