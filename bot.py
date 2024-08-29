@@ -3,7 +3,7 @@ import os
 from datetime import datetime, timedelta
 from motor.motor_asyncio import AsyncIOMotorClient
 from dotenv import load_dotenv
-from telegram import Update, Chat, BotCommand, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import Update, Chat, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, CallbackContext, CallbackQueryHandler
 
 # Load environment variables from .env file
@@ -28,7 +28,7 @@ collection = db.collected_data
 user_collection = db.users  # Collection to store private chat user IDs
 notification_collection = db.notifications  # Collection to track notifications
 
-# Keyword mapping for each service
+# Define service keywords
 service_keywords = {
     "Renters Real Estate": ["for rent", "rental", "rent", "available for rent", "leasing", "rental property", "for lease", "rental unit"],
     "Sellers Real Estate": ["for sale", "selling", "buy property", "house for sale", "property for sale"],
@@ -54,7 +54,7 @@ service_keywords = {
 }
 
 # Initial service state (default is off)
-service_state = {service: False for service in service_keywords}
+service_state = {service: False for service in service_keywords.keys()}
 
 def generate_service_keyboard() -> InlineKeyboardMarkup:
     keyboard = []
@@ -140,6 +140,7 @@ async def button(update: Update, context: CallbackContext) -> None:
     await query.answer()
     await query.edit_message_text(text="Choose service", reply_markup=generate_service_keyboard())
 
+# Function to collect data from the group
 async def collect_data(update: Update, context: CallbackContext) -> None:
     user = update.message.from_user
     chat = update.message.chat
@@ -150,12 +151,14 @@ async def collect_data(update: Update, context: CallbackContext) -> None:
         return
 
     text_lower = text.lower()
-
-    # Get the list of selected services for the user
     user_data = await user_collection.find_one({"user_id": user.id})
     selected_services = user_data.get("services", [])
 
-    if not any(any(keyword in text_lower for keyword in service_keywords[service]) for service in selected_services):
+    keywords = []
+    for service in selected_services:
+        keywords.extend(service_keywords.get(service, []))
+
+    if not any(keyword in text_lower for keyword in keywords):
         return
 
     if chat.username:
@@ -180,39 +183,30 @@ async def collect_data(update: Update, context: CallbackContext) -> None:
     except Exception as e:
         logger.error(f"Error saving data to MongoDB: {e}")
 
+# Function to notify users about new data
 async def notify_users(context: CallbackContext, data: dict) -> None:
     summary = f"{data.get('text', 'No text')}"
     buttons = []
-    for service in service_keywords.keys():
-        buttons.append([InlineKeyboardButton(service, callback_data=service)])
+    if data.get('user_link'):
+        buttons.append(InlineKeyboardButton("User", url=data['user_link']))
+    if data.get('message_link'):
+        buttons.append(InlineKeyboardButton("Message", url=data['message_link']))
 
-    for chat in await notification_collection.find().to_list(length=None):
-        try:
-            await context.bot.send_message(
-                chat_id=chat['chat_id'],
-                text=summary,
-                reply_markup=InlineKeyboardMarkup(buttons)
-            )
-        except Exception as e:
-            logger.error(f"Error sending notification: {e}")
+    if buttons:
+        keyboard = InlineKeyboardMarkup([buttons])
+        users = await user_collection.find({"status": True}).to_list(length=100)
+        for user in users:
+            if user.get("services"):
+                await context.bot.send_message(user['user_id'], summary, reply_markup=keyboard)
 
 async def main() -> None:
-    """Run the bot."""
-    application = Application.builder().token(os.getenv("TELEGRAM_BOT_TOKEN")).build()
-
-    # Add command handlers
+    application = Application.builder().token(os.getenv("BOT_TOKEN")).build()
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("services", services))
-
-    # Add message handler for text messages
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, collect_data))
-
-    # Add callback query handler for button presses
     application.add_handler(CallbackQueryHandler(button))
-
-    # Run the bot
+    application.add_handler(MessageHandler(filters.text & ~filters.command, collect_data))
     await application.run_polling()
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     import asyncio
     asyncio.run(main())
