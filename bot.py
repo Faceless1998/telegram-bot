@@ -314,30 +314,14 @@ async def collect_data(update: Update, context: CallbackContext) -> None:
         return
 
     text_lower = text.lower()
-    keywords = [
-        "for rent",
-        "rental",
-        "rent",
-        "available for rent",
-        "leasing",
-        "rental property",
-        "for lease",
-        "rental unit",
-        "ქირავდება",
-        "გასაცემი",
-        "გასაქირავებელი",
-        "დაქირავება",
-        "ქირა",
-        "ხელმისაწვდომი",
-        "аренда",
-        "сдается",
-        "арендуется",
-        "арендовать",
-        "на аренду",
-        "Сниму",
-    ]
 
-    if not any(keyword in text_lower for keyword in keywords):
+    # Determine if the text matches any keywords for the active services
+    matched_services = []
+    for service, keywords in service_keywords.items():
+        if service_state.get(service, False) and any(keyword in text_lower for keyword in keywords):
+            matched_services.append(service)
+
+    if not matched_services:
         return
 
     if chat.username:
@@ -353,6 +337,7 @@ async def collect_data(update: Update, context: CallbackContext) -> None:
         "message_link": message_link,
         "chat_name": chat_name,
         "message_id": update.message.message_id,
+        "matched_services": matched_services
     }
 
     try:
