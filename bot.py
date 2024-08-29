@@ -72,7 +72,8 @@ async def start(update: Update, _: CallbackContext) -> None:
                 "last_name": last_name,
                 "user_id": user_id,
                 "status": True,  # Set status to True for active
-                "trial_end_date": trial_end_date
+                "trial_end_date": trial_end_date,
+                "services": []  # Store the selected services
             })
             logger.info(f"Added user {user_id} to the database with status 'True'.")
             await update.message.reply_text("Hello! I'm a bot that collects text from groups. You have a 3-day free trial.")
@@ -86,19 +87,42 @@ async def services(update: Update, _: CallbackContext) -> None:
 
 async def button(update: Update, context: CallbackContext) -> None:
     query = update.callback_query
+    user = query.from_user
+    user_data = await user_collection.find_one({"user_id": user.id})
+
     service_name, status = query.data.rsplit('_', 1)
 
     if status == "on":
         service_state[service_name] = True
-        response_text = f"{service_name} is now enabled. 🟢"
-        callback_data = f"{service_name}_off"
+
+        # Update user's selected services and adjust trial period
+        selected_services = user_data.get("services", [])
+        selected_services.append(service_name)
+
+        if len(selected_services) == 1:
+            trial_end_date = (datetime.utcnow() + timedelta(days=3)).strftime('%Y-%m-%d')
+        else:
+            trial_end_date = datetime.utcnow().replace(hour=23, minute=59, second=59).strftime('%Y-%m-%d %H:%M:%S')
+
+        await user_collection.update_one(
+            {"user_id": user.id},
+            {"$set": {"services": selected_services, "trial_end_date": trial_end_date}}
+        )
     elif status == "off":
         service_state[service_name] = False
-        response_text = f"{service_name} is now disabled. 🔴"
-        callback_data = f"{service_name}_on"
+
+        # Update user's selected services
+        selected_services = user_data.get("services", [])
+        if service_name in selected_services:
+            selected_services.remove(service_name)
+
+        await user_collection.update_one(
+            {"user_id": user.id},
+            {"$set": {"services": selected_services}}
+        )
 
     await query.answer()
-    await query.edit_message_text(text=response_text, reply_markup=generate_service_keyboard())
+    await query.edit_message_text(text="choose service", reply_markup=generate_service_keyboard())
 
 # Function to collect data from the group
 async def collect_data(update: Update, context: CallbackContext) -> None:
@@ -111,36 +135,13 @@ async def collect_data(update: Update, context: CallbackContext) -> None:
         return
 
     text_lower = text.lower()
+    keywords = [
+        "for rent", "rental", "rent", "available for rent", "leasing", "rental property", "for lease", "rental unit",
+        "ქირავდება", "გასაცემი", "გასაქირავებელი", "დაქირავება", "ქირა", "ხელმისაწვდომი",
+        "аренда", "сдается", "арендуется", "арендовать", "на аренду", "Сниму"
+    ]
 
-    # Keywords for each service
-    service_keywords = {
-        "Renters Real Estate": ["for rent", "rental", "rent", "available for rent", "leasing", "rental property", "for lease", "rental unit"],
-        "Sellers Real Estate": ["for sale", "selling", "buy property", "house for sale", "property for sale"],
-        "Landlords Real Estate": ["landlord", "landlord needed", "rent out", "property management"],
-        "Currency and Crypto Exchange": ["currency exchange", "crypto exchange", "buy bitcoin", "sell bitcoin", "forex", "crypto trading"],
-        "Buyers Real Estate": ["buy house", "buy property", "property purchase", "real estate investment"],
-        "Residence Permit": ["residence permit", "visa", "immigration", "work permit", "residency"],
-        "Short-Term Renters": ["short-term rental", "vacation rental", "holiday home", "airbnb", "temporary accommodation"],
-        "Room or Hostel Renters": ["room for rent", "hostel", "shared accommodation", "hostel vacancy", "roommate needed"],
-        "Owners Real Estate": ["property owner", "own property", "real estate owner", "own house", "property portfolio"],
-        "AI - Renters Real Estate": ["ai rental", "ai real estate", "smart rental", "ai property management"],
-        "Renters Cars": ["car rental", "rent a car", "car lease", "vehicle rental", "rental car available"],
-        "Landlords Cars": ["rent out car", "car lease", "car available for rent"],
-        "Transfer": ["airport transfer", "shuttle service", "transport service", "pickup and drop", "travel transfer"],
-        "Bike Rentals": ["bike rental", "rent a bike", "bicycle rental", "bike hire"],
-        "Yacht Rentals": ["yacht rental", "rent a yacht", "boat rental", "yacht hire", "luxury boat rental"],
-        "Excursions": ["excursion", "guided tour", "day trip", "sightseeing tour", "tourist attraction"],
-        "Massage": ["massage service", "spa treatment", "therapeutic massage", "relaxation massage"],
-        "Cleaning": ["cleaning service", "house cleaning", "office cleaning", "maid service", "deep cleaning"],
-        "Photography": ["photography service", "event photography", "portrait photography", "photo shoot", "professional photographer"],
-        "Insurance": ["insurance", "life insurance", "health insurance", "car insurance", "property insurance"],
-        "Manicure": ["manicure", "nail salon", "nail treatment", "nail care", "nail art"],
-    }
-
-    # Check if any service keywords are present in the message
-    matched_services = [service for service, keywords in service_keywords.items() if any(keyword in text_lower for keyword in keywords)]
-
-    if not matched_services:
+    if not any(keyword in text_lower for keyword in keywords):
         return
 
     if chat.username:
@@ -155,13 +156,12 @@ async def collect_data(update: Update, context: CallbackContext) -> None:
         'text': text,
         'message_link': message_link,
         'chat_name': chat_name,
-        'message_id': update.message.message_id,
-        'services': matched_services  # Store the matched services
+        'message_id': update.message.message_id
     }
 
     try:
         await collection.insert_one(collected_data)
-        logger.info(f"Data inserted successfully with matched services: {matched_services}")
+        logger.info("Data inserted successfully.")
         await notify_users(context, collected_data)
     except Exception as e:
         logger.error(f"Error saving data to MongoDB: {e}")
@@ -180,32 +180,48 @@ async def notify_users(context: CallbackContext, data: dict) -> None:
         user_id = user["user_id"]
         trial_end_date_str = user.get("trial_end_date")
         if trial_end_date_str:
-            trial_end_date = datetime.strptime(trial_end_date_str, '%Y-%m-%d')
+            try:
+                trial_end_date = datetime.strptime(trial_end_date_str, '%Y-%m-%d %H:%M:%S')
+            except ValueError:
+                trial_end_date = datetime.strptime(trial_end_date_str, '%Y-%m-%d')
             if datetime.utcnow() >= trial_end_date:
-                await user_collection.update_one({"user_id": user_id}, {"$set": {"status": False}})
+                await user_collection.update_one({"user_id": user_id}, {"$set": {"status": False}})  # Update to False when trial ends
+                logger.info(f"User {user_id} trial period ended. Status changed to 'False'.")
                 continue
+
+        if await notification_collection.find_one({"user_id": user_id, "message_id": data['message_id']}):
+            continue
+
         try:
             await context.bot.send_message(chat_id=user_id, text=summary, reply_markup=reply_markup)
+            logger.info(f"Notification sent to user {user_id}.")
+            await notification_collection.insert_one({"user_id": user_id, "message_id": data['message_id']})
         except Exception as e:
-            logger.error(f"Failed to notify user {user_id}: {e}")
+            logger.error(f"Error sending notification to user {user_id}: {e}")
 
-async def main() -> None:
-    # Create the Application and pass it your bot's token
-    application = Application.builder().token(os.getenv("TELEGRAM_TOKEN")).build()
+# Error handler
+async def error(update: Update, context: CallbackContext) -> None:
+    logger.warning(f"Update {update} caused error {context.error}")
 
-    # on different commands - answer in Telegram
+def main() -> None:
+    bot_token = os.getenv("BOT_TOKEN")
+    if not bot_token:
+        logger.error("BOT_TOKEN is not set in the environment variables.")
+        raise ValueError("BOT_TOKEN is not set in the environment variables.")
+
+    application = Application.builder().token(bot_token).build()
+
+    # Add handlers
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("services", services))
-
-    # on non command i.e message - collect data
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, collect_data))
-
-    # on callback from inline buttons
     application.add_handler(CallbackQueryHandler(button))
+    application.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), collect_data))
 
-    # Run the bot
-    await application.run_polling()
+    # Log all errors
+    application.add_error_handler(error)
+
+    # Start the Bot
+    application.run_polling()
 
 if __name__ == '__main__':
-    import asyncio
-    asyncio.run(main())
+    main()
