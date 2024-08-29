@@ -31,7 +31,7 @@ notification_collection = db.notifications  # Collection to track notifications
 async def start(update: Update, _: CallbackContext) -> None:
     user = update.message.from_user
     chat_type = update.message.chat.type
-    
+
     # Collect user information
     username = user.username
     first_name = user.first_name
@@ -42,19 +42,17 @@ async def start(update: Update, _: CallbackContext) -> None:
         # Check if the user is already in the database
         user_data = await user_collection.find_one({"user_id": user_id})
         if user_data is None:
-            current_date = datetime.utcnow().strftime('%Y-%m-%d')
             trial_end_date = (datetime.utcnow() + timedelta(days=3)).strftime('%Y-%m-%d')
-            
+
             await user_collection.insert_one({
                 "username": username,
                 "first_name": first_name,
                 "last_name": last_name,
                 "user_id": user_id,
-                "status": "active",
-                "date": current_date,
+                "status": True,  # Set status to True for active
                 "trial_end_date": trial_end_date
             })
-            logger.info(f"Added user {user_id} to the database with status 'active'.")
+            logger.info(f"Added user {user_id} to the database with status 'True'.")
             await update.message.reply_text("Hello! I'm a bot that collects text from groups. You have a 3-day free trial.")
         else:
             logger.info(f"User {user_id} already registered.")
@@ -74,7 +72,7 @@ async def collect_data(update: Update, context: CallbackContext) -> None:
     keywords = [
         "for rent", "rental", "rent", "available for rent", "leasing", "rental property", "for lease", "rental unit",
         "ქირავდება", "გასაცემი", "გასაქირავებელი", "დაქირავება", "ქირა", "ხელმისაწვდომი",
-        "аренда", "сдается", "в аренду", "арендуется", "квартиры в аренду", "сдам", "арендовать", "на аренду", "Сниму квартиру"
+        "аренда", "сдается", "арендуется", "арендовать", "на аренду", "Сниму"
     ]
 
     if not any(keyword in text_lower for keyword in keywords):
@@ -112,19 +110,19 @@ async def notify_users(context: CallbackContext, data: dict) -> None:
         buttons.append(InlineKeyboardButton(text="Message Link", url=data['message_link']))
     reply_markup = InlineKeyboardMarkup([[*buttons]])
 
-    async for user in user_collection.find({"status": "active"}):
+    async for user in user_collection.find({"status": True}):  # Only notify active users
         user_id = user["user_id"]
         trial_end_date_str = user.get("trial_end_date")
         if trial_end_date_str:
             trial_end_date = datetime.strptime(trial_end_date_str, '%Y-%m-%d')
             if datetime.utcnow() >= trial_end_date:
-                await user_collection.update_one({"user_id": user_id}, {"$set": {"status": "inactive"}})
-                logger.info(f"User {user_id} trial period ended. Status changed to 'inactive'.")
+                await user_collection.update_one({"user_id": user_id}, {"$set": {"status": False}})  # Update to False when trial ends
+                logger.info(f"User {user_id} trial period ended. Status changed to 'False'.")
                 continue
 
         if await notification_collection.find_one({"user_id": user_id, "message_id": data['message_id']}):
             continue
-        
+
         try:
             await context.bot.send_message(chat_id=user_id, text=summary, reply_markup=reply_markup)
             logger.info(f"Notification sent to user {user_id}.")
